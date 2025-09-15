@@ -97,6 +97,20 @@ const SaleDetail = ({ sale }) => {
 
 
 export default function SalesHistory() {
+  /* PATCH: session filter */
+  const sessionSince = React.useMemo(() => {
+    if (state.cashRegister?.isOpen && state.cashRegister?.openedAt) return state.cashRegister.openedAt;
+    const last = (state.cashClosures || [])[state.cashClosures.length - 1];
+    return last?.closedAt || null; // if recently closed, show nothing (cleared panel)
+  }, [state.cashRegister?.isOpen, state.cashRegister?.openedAt, state.cashClosures]);
+
+  const visibleSales = React.useMemo(() => {
+    const arr = sales || [];
+    if (!sessionSince) return arr;
+    const sinceMs = new Date(sessionSince).getTime();
+    return arr.filter(s => new Date(s.timestamp).getTime() >= sinceMs);
+  }, [sales, sessionSince]);
+
   const { state } = usePOS();
   const [filters, setFilters] = useState({
     dateStart: '',
@@ -106,7 +120,7 @@ export default function SalesHistory() {
     search: ''
   });
 
-  const filteredSales = useMemo(() => {
+  const filteredSales = useMemo(() => { /* patched */
     return [...state.sales]
       .reverse()
       .filter(sale => {

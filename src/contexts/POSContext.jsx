@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { toast } from '@/components/ui/use-toast';
+import { issueDocument } from '@/lib/invoicing';
 
 const POSContext = createContext();
 

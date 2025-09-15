@@ -7,6 +7,7 @@ import { Printer, X, Download } from 'lucide-react';
 import { usePOS } from '@/contexts/POSContext';
 import { toast } from '@/components/ui/use-toast';
 import { QRCodeSVG } from 'qrcode.react';
+import { issueDocument } from '@/lib/invoicing';
 
 const DocumentPreview = ({ isOpen, onOpenChange, documentType, onConfirm }) => {
     const { state, calculateTotal, calculateProfit } = usePOS();
@@ -32,15 +33,18 @@ const DocumentPreview = ({ isOpen, onOpenChange, documentType, onConfirm }) => {
         }
     };
 
-    const generatePdf = async () => {
-        // This is a placeholder for actual PDF generation and API call
+    const generatePdf = async () => { /* PATCH: generate via invoicing */
         setIsLoading(true);
         try {
-            // Simulate API call delay
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            // In a real scenario, you'd send data to your API to generate the PDF
-            // const apiResponse = await fetch('/api/billing/invoice', { method: 'POST', body: JSON.stringify(payload) });
+            const payload = { cart: state.cart, customer: state.currentCustomer, totals: { total, taxAmount } };
+            const res = await issueDocument({ type: documentType, payload, settings });
+            setPdfUrl(res?.pdf_url || null);
+        } catch (e) {
+            setPdfUrl(null);
+        } finally {
+            setIsLoading(false);
+        }
+    });
             // const data = await apiResponse.json();
             // setPdfUrl(data.pdf_url); // Assuming API returns a URL
 
@@ -56,7 +60,7 @@ const DocumentPreview = ({ isOpen, onOpenChange, documentType, onConfirm }) => {
     useEffect(() => {
         if (isOpen) {
             setPdfUrl(null); // Clear PDF URL on open
-            generatePdf(); // Try to generate PDF on dialog open
+            generatePdf();
         }
     }, [isOpen]);
 
