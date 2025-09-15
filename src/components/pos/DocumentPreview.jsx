@@ -44,7 +44,7 @@ const DocumentPreview = ({ isOpen, onOpenChange, documentType, onConfirm }) => {
         } finally {
             setIsLoading(false);
         }
-    });
+    };
             // const data = await apiResponse.json();
             // setPdfUrl(data.pdf_url); // Assuming API returns a URL
 
