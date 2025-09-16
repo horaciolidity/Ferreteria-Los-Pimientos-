@@ -14,14 +14,6 @@ export default function CustomerDisplay() {
     discount: 0,
     total: 0
   });
-  /* PATCH: storage fallback */
-  const computeTotals = React.useCallback((cart, discount, taxRate) => {
-    const subtotal = (cart || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const totalItemDiscount = (cart || []).reduce((sum, item) => sum + (item.itemDiscount || 0), 0);
-    const tax = (subtotal - totalItemDiscount) * taxRate;
-    return subtotal - totalItemDiscount + tax - (discount || 0);
-  }, []);
-
 
   useEffect(() => {
     const calculateTotal = (cart, discount, taxRate) => {
@@ -31,46 +23,6 @@ export default function CustomerDisplay() {
         const tax = totalWithItemDiscounts * taxRate;
         return totalWithItemDiscounts + tax - discount;
     };
-
-  // Hydrate from localStorage initially for single-screen setups
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('ferrePOS_data');
-      if (raw) {
-        const data = JSON.parse(raw);
-        const total = computeTotals(data.cart || [], data.discount || 0, (data.settings?.taxRate) ?? 0);
-        setDisplayData({
-          cart: data.cart || [],
-          currentCustomer: data.currentCustomer || null,
-          paymentMethod: data.paymentMethod || 'cash',
-          paymentAmount: data.paymentAmount || 0,
-          discount: data.discount || 0,
-          total
-        });
-      }
-    } catch {}
-  }, [computeTotals]);
-  // Listen to storage changes as secondary channel
-  useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key === 'ferrePOS_data' && e.newValue) {
-        try {
-          const data = JSON.parse(e.newValue);
-          const total = computeTotals(data.cart || [], data.discount || 0, (data.settings?.taxRate) ?? 0);
-          setDisplayData({
-            cart: data.cart || [],
-            currentCustomer: data.currentCustomer || null,
-            paymentMethod: data.paymentMethod || 'cash',
-            paymentAmount: data.paymentAmount || 0,
-            discount: data.discount || 0,
-            total
-          });
-        } catch {}
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [computeTotals]);
 
     const channel = new BroadcastChannel('ferrePOS');
     

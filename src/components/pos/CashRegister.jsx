@@ -78,12 +78,8 @@ export default function CashRegister() {
   };
 
   const printReport = (closure) => {
-    /* PATCH: print summary */
-    const w = window.open('', '_blank');
-    if (w) {
-      w.document.write(`<pre>${JSON.stringify(closure, null, 2)}</pre>`);
-      w.document.close(); w.focus(); w.print(); w.close();
-    } else { console.log('Closure summary:', closure); }
+    toast({ title: "🚧 Imprimir Reporte: Funcionalidad no implementada" });
+    console.log("Printing report for closure:", closure);
   };
 
   const { openingAmount: currentOpening, salesByType, currentAmount, movements, isOpen, openedAt } = state.cashRegister;

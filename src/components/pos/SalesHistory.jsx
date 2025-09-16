@@ -1,165 +1,312 @@
+// src/components/pos/SalesHistory.jsx
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { History, Calendar, Printer, Package, DollarSign, Percent, FileText, CheckSquare, Search } from 'lucide-react';
+import { History, Printer, Package, DollarSign, Percent, Search, CheckSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label'; // Importar el componente Label
+import { Label } from '@/components/ui/label';
 import { usePOS } from '@/contexts/POSContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import DocumentPreview from '@/components/pos/DocumentPreview';
+
+const currency = (n) => `$${Number(n || 0).toFixed(2)}`;
+
+const getPaymentMethodLabel = (method) => {
+  switch (method) {
+    case 'cash': return 'Efectivo';
+    case 'card': return 'Tarjeta';
+    case 'transfer': return 'Transferencia';
+    case 'mixed': return 'Mixto';
+    case 'account': return 'Cuenta Corriente';
+    case 'credit': return 'A Cuenta';
+    default: return method || '-';
+  }
+};
+
+const humanType = (t) => {
+  switch (t) {
+    case 'sale': return 'Venta';
+    case 'quote': return 'Presupuesto';
+    case 'remit': return 'Remito';
+    case 'credit': return 'Crédito';
+    default: return t;
+  }
+};
 
 const SaleDetail = ({ sale }) => {
   const { dispatch } = usePOS();
-  const getPaymentMethodLabel = (method) => {
-    switch (method) {
-      case 'cash': return 'Efectivo';
-      case 'transfer': return 'Transferencia';
-      case 'mixed': return 'Mixto';
-      case 'credit': return 'A Cuenta';
-      default: return method;
-    }
-  };
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  const reprintTicket = () => {
-    toast({ title: "🚧 Reimprimir Ticket: Funcionalidad no implementada" });
-  };
-  
+  const method   = sale?.payment?.method ?? sale?.paymentMethod;
+  const paid     = sale?.payment?.amountPaid ?? sale?.paymentAmount ?? 0;
+  const change   = sale?.payment?.change ?? sale?.change ?? 0;
+
+  const discountItems = sale?.itemDiscounts ?? (sale?.items || []).reduce((acc, i) => acc + Number(i.itemDiscount || 0), 0);
+  const discountGlobal = Number(sale?.discount || 0);
+  const iva = sale?.taxAmount ?? sale?.tax ?? 0;
+
+  const reprintTicket = () => setPreviewOpen(true);
+
   const convertToSale = () => {
-      dispatch({type: 'CONVERT_QUOTE_TO_SALE', payload: sale });
-      toast({title: 'Presupuesto convertido', description: 'El presupuesto se ha convertido a una venta.'});
+    dispatch?.({ type: 'CONVERT_QUOTE_TO_SALE', payload: sale });
+    toast({ title: 'Presupuesto convertido', description: 'El presupuesto se ha convertido a una venta.' });
   };
 
   return (
-    <DialogContent className="card-glass border-border max-w-2xl">
-      <DialogHeader>
-        <DialogTitle>Detalle de Venta - {sale.documentNumber}</DialogTitle>
-      </DialogHeader>
-      <div className="space-y-4 max-h-[70vh] overflow-y-auto scrollbar-thin p-1">
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div><p className="text-muted-foreground">Fecha:</p><p>{new Date(sale.timestamp).toLocaleString()}</p></div>
-          <div><p className="text-muted-foreground">Tipo:</p><p className="capitalize">{sale.type.replace('_', ' ')}</p></div>
-          {sale.customer && <div><p className="text-muted-foreground">Cliente:</p><p>{sale.customer.name}</p></div>}
-        </div>
+    <>
+      <DialogContent className="card-glass border-border max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Detalle de {humanType(sale.type)} - {sale.documentNumber}</DialogTitle>
+        </DialogHeader>
 
-        <div className="border-t border-border pt-4">
-          <h3 className="font-semibold mb-2 flex items-center"><Package className="h-4 w-4 mr-2" />Productos</h3>
-          <div className="space-y-2">
-            {sale.items.map((item, index) => (
-              <div key={item.cartId || index} className="flex justify-between items-center bg-background/50 p-2 rounded-md">
-                <div>
-                  <p>{item.name}</p>
-                  <p className="text-xs text-muted-foreground">{item.quantity} x ${item.price.toFixed(2)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-medium">${(item.quantity * item.price).toFixed(2)}</p>
-                  {item.itemDiscount > 0 && <p className="text-xs text-green-500">-${item.itemDiscount.toFixed(2)}</p>}
-                </div>
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto scrollbar-thin p-1">
+          {/* Cabecera */}
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-muted-foreground">Fecha:</p>
+              <p>{new Date(sale.timestamp).toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Tipo:</p>
+              <p className="capitalize">{humanType(sale.type)}</p>
+            </div>
+            {sale.customer && (
+              <div>
+                <p className="text-muted-foreground">Cliente:</p>
+                <p>{sale.customer.name}</p>
               </div>
-            ))}
+            )}
+          </div>
+
+          {/* Items */}
+          <div className="border-t border-border pt-4">
+            <h3 className="font-semibold mb-2 flex items-center">
+              <Package className="h-4 w-4 mr-2" />Productos
+            </h3>
+            <div className="space-y-2">
+              {(sale.items || []).map((item, index) => {
+                const line = Number(item.price || 0) * Number(item.quantity || 0);
+                const lineNet = line - Number(item.itemDiscount || 0);
+                return (
+                  <div key={item.cartId || item.id || index} className="flex justify-between items-center bg-background/50 p-2 rounded-md">
+                    <div>
+                      <p>{item.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.quantity} x {currency(item.price)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium">{currency(lineNet)}</p>
+                      {Number(item.itemDiscount || 0) > 0 && (
+                        <p className="text-xs text-green-600">- {currency(item.itemDiscount)}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Totales */}
+          <div className="border-t border-border pt-4">
+            <h3 className="font-semibold mb-2 flex items-center">
+              <DollarSign className="h-4 w-4 mr-2" />Totales
+            </h3>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Subtotal:</span>
+                <span>{currency(sale.subtotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Desc. ítems:</span>
+                <span className="text-green-600">- {currency(discountItems)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Desc. global:</span>
+                <span className="text-green-600">- {currency(discountGlobal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">IVA:</span>
+                <span>{currency(iva)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-base border-t border-border/50 mt-1 pt-1">
+                <span>Total:</span>
+                <span>{currency(sale.total)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Ganancia */}
+          {sale.type !== 'quote' && (
+            <div className="border-t border-border pt-4">
+              <h3 className="font-semibold mb-2 flex items-center">
+                <Percent className="h-4 w-4 mr-2" />Ganancia
+              </h3>
+              <div className="flex justify-between font-bold text-green-600">
+                <span>Ganancia de la venta:</span>
+                <span>{currency(sale.profit)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Pago */}
+          <div className="border-t border-border pt-4">
+            <h3 className="font-semibold mb-2">Pago</h3>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Método:</span>
+                <span>{getPaymentMethodLabel(method)}</span>
+              </div>
+              {method !== 'transfer' && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Monto recibido:</span>
+                  <span>{currency(paid)}</span>
+                </div>
+              )}
+              {Number(change) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Vuelto:</span>
+                  <span>{currency(change)}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="border-t border-border pt-4">
-          <h3 className="font-semibold mb-2 flex items-center"><DollarSign className="h-4 w-4 mr-2" />Totales</h3>
-          <div className="space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Subtotal:</span><span>${sale.subtotal.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Descuentos:</span><span className="text-green-500">-${(sale.items.reduce((acc, i) => acc + (i.itemDiscount || 0), 0) + (sale.discount || 0)).toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">IVA:</span><span>${sale.tax.toFixed(2)}</span></div>
-            <div className="flex justify-between font-bold text-base border-t border-border/50 mt-1 pt-1"><span>Total:</span><span>${sale.total.toFixed(2)}</span></div>
-          </div>
+        {/* Acciones detalle */}
+        <div className="flex justify-end pt-4 gap-2">
+          {sale.type === 'quote' && (
+            <Button onClick={convertToSale} className="bg-green-600 hover:bg-green-700">
+              <CheckSquare className="h-4 w-4 mr-2" />
+              Convertir a Venta
+            </Button>
+          )}
+          <Button onClick={reprintTicket}>
+            <Printer className="h-4 w-4 mr-2" />
+            Ver / Reimprimir
+          </Button>
         </div>
-        
-        {sale.type !== 'quote' && (
-        <div className="border-t border-border pt-4">
-          <h3 className="font-semibold mb-2 flex items-center"><Percent className="h-4 w-4 mr-2" />Ganancia</h3>
-          <div className="flex justify-between font-bold text-green-500"><span>Ganancia de la venta:</span><span>${(sale.profit || 0).toFixed(2)}</span></div>
-        </div>
-        )}
+      </DialogContent>
 
-        <div className="border-t border-border pt-4">
-          <h3 className="font-semibold mb-2">Pago</h3>
-          <div className="space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Método:</span><span>{getPaymentMethodLabel(sale.paymentMethod)}</span></div>
-            {sale.paymentMethod !== 'transfer' && <div className="flex justify-between"><span className="text-muted-foreground">Monto Recibido:</span><span>${(sale.paymentAmount || 0).toFixed(2)}</span></div>}
-            {sale.change > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Vuelto:</span><span>${sale.change.toFixed(2)}</span></div>}
-          </div>
-        </div>
-        
-      </div>
-      <div className="flex justify-end pt-4 gap-2">
-        {sale.type === 'quote' && <Button onClick={convertToSale} className="bg-green-600 hover:bg-green-700"><CheckSquare className="h-4 w-4 mr-2"/>Convertir a Venta</Button>}
-        <Button onClick={reprintTicket}><Printer className="h-4 w-4 mr-2" />Reimprimir</Button>
-      </div>
-    </DialogContent>
+      {/* Preview para reimprimir/descargar */}
+      <DocumentPreview
+        isOpen={previewOpen}
+        onOpenChange={setPreviewOpen}
+        documentType={sale?.type || 'sale'}
+        sale={sale}
+      />
+    </>
   );
 };
 
-
 export default function SalesHistory() {
-  /* PATCH: session filter */
-  const sessionSince = React.useMemo(() => {
-    if (state.cashRegister?.isOpen && state.cashRegister?.openedAt) return state.cashRegister.openedAt;
-    const last = (state.cashClosures || [])[state.cashClosures.length - 1];
-    return last?.closedAt || null; // if recently closed, show nothing (cleared panel)
-  }, [state.cashRegister?.isOpen, state.cashRegister?.openedAt, state.cashClosures]);
-
-  const visibleSales = React.useMemo(() => {
-    const arr = sales || [];
-    if (!sessionSince) return arr;
-    const sinceMs = new Date(sessionSince).getTime();
-    return arr.filter(s => new Date(s.timestamp).getTime() >= sinceMs);
-  }, [sales, sessionSince]);
-
   const { state } = usePOS();
   const [filters, setFilters] = useState({
     dateStart: '',
     dateEnd: '',
     type: 'all',
     paymentMethod: 'all',
-    search: ''
+    search: '',
   });
 
-  const filteredSales = useMemo(() => { /* patched */
-    return [...state.sales]
-      .reverse()
-      .filter(sale => {
-        const saleDate = new Date(sale.timestamp);
-        const startDate = filters.dateStart ? new Date(filters.dateStart) : null;
-        const endDate = filters.dateEnd ? new Date(filters.dateEnd) : null;
-        if (endDate) endDate.setHours(23, 59, 59, 999);
+  const filteredSales = useMemo(() => {
+    const list = [...(state.sales || [])].reverse();
+    return list.filter((sale) => {
+      const saleDate = new Date(sale.timestamp);
+      const startDate = filters.dateStart ? new Date(filters.dateStart) : null;
+      const endDate = filters.dateEnd ? new Date(filters.dateEnd) : null;
+      if (endDate) endDate.setHours(23, 59, 59, 999);
 
-        if (startDate && saleDate < startDate) return false;
-        if (endDate && saleDate > endDate) return false;
-        if (filters.type !== 'all' && sale.type !== filters.type) return false;
-        if (filters.paymentMethod !== 'all' && sale.paymentMethod !== filters.paymentMethod) return false;
-        if (filters.search && !(
-            sale.documentNumber.toLowerCase().includes(filters.search.toLowerCase()) ||
-            sale.customer?.name.toLowerCase().includes(filters.search.toLowerCase())
-        )) return false;
-        
-        return true;
-      });
+      if (startDate && saleDate < startDate) return false;
+      if (endDate && saleDate > endDate) return false;
+      if (filters.type !== 'all' && sale.type !== filters.type) return false;
+
+      const saleMethod = sale?.payment?.method ?? sale?.paymentMethod;
+      if (filters.paymentMethod !== 'all' && saleMethod !== filters.paymentMethod) return false;
+
+      const q = (filters.search || '').toLowerCase();
+      if (q) {
+        const doc = String(sale.documentNumber || '').toLowerCase();
+        const cust = String(sale.customer?.name || '').toLowerCase();
+        if (!doc.includes(q) && !cust.includes(q)) return false;
+      }
+      return true;
+    });
   }, [state.sales, filters]);
 
-  const handleFilterChange = (key, value) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-  };
+  const handleFilterChange = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Historial de Operaciones</h1>
 
+      {/* Filtros */}
       <div className="card-glass p-4 rounded-lg">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-          <div className="space-y-1"><Label>Desde</Label><Input type="date" value={filters.dateStart} onChange={(e) => handleFilterChange('dateStart', e.target.value)} /></div>
-          <div className="space-y-1"><Label>Hasta</Label><Input type="date" value={filters.dateEnd} onChange={(e) => handleFilterChange('dateEnd', e.target.value)} /></div>
-          <div className="space-y-1"><Label>Tipo</Label><Select value={filters.type} onValueChange={(v) => handleFilterChange('type', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="sale">Venta</SelectItem><SelectItem value="quote">Presupuesto</SelectItem><SelectItem value="remit">Remito</SelectItem><SelectItem value="credit">Crédito</SelectItem></SelectContent></Select></div>
-          <div className="space-y-1"><Label>Pago</Label><Select value={filters.paymentMethod} onValueChange={(v) => handleFilterChange('paymentMethod', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="cash">Efectivo</SelectItem><SelectItem value="transfer">Transferencia</SelectItem><SelectItem value="mixed">Mixto</SelectItem></SelectContent></Select></div>
-          <div className="space-y-1"><Label>Buscar</Label><div className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input placeholder="Nro o Cliente..." value={filters.search} onChange={(e) => handleFilterChange('search', e.target.value)} className="pl-8" /></div></div>
+          <div className="space-y-1">
+            <Label>Desde</Label>
+            <Input
+              type="date"
+              value={filters.dateStart}
+              onChange={(e) => handleFilterChange('dateStart', e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Hasta</Label>
+            <Input
+              type="date"
+              value={filters.dateEnd}
+              onChange={(e) => handleFilterChange('dateEnd', e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Tipo</Label>
+            <Select value={filters.type} onValueChange={(v) => handleFilterChange('type', v)}>
+              <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="sale">Venta</SelectItem>
+                <SelectItem value="quote">Presupuesto</SelectItem>
+                <SelectItem value="remit">Remito</SelectItem>
+                <SelectItem value="credit">Crédito</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Pago</Label>
+            <Select
+              value={filters.paymentMethod}
+              onValueChange={(v) => handleFilterChange('paymentMethod', v)}
+            >
+              <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="cash">Efectivo</SelectItem>
+                <SelectItem value="card">Tarjeta</SelectItem>
+                <SelectItem value="transfer">Transferencia</SelectItem>
+                <SelectItem value="mixed">Mixto</SelectItem>
+                <SelectItem value="account">Cuenta Corriente</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Buscar</Label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Nro o Cliente..."
+                value={filters.search}
+                onChange={(e) => handleFilterChange('search', e.target.value)}
+                className="pl-8"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Tabla */}
       <div className="card-glass p-6 rounded-lg">
         <div className="overflow-x-auto">
           <table className="w-full text-base">
@@ -176,13 +323,21 @@ export default function SalesHistory() {
             </thead>
             <tbody>
               {filteredSales.map((sale, index) => (
-                <motion.tr key={sale.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.02 }} className="border-b border-border/50 hover:bg-accent">
-                  <td className="p-3 text-sm text-muted-foreground">{new Date(sale.timestamp).toLocaleString()}</td>
+                <motion.tr
+                  key={sale.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: index * 0.02 }}
+                  className="border-b border-border/50 hover:bg-accent"
+                >
+                  <td className="p-3 text-sm text-muted-foreground">
+                    {new Date(sale.timestamp).toLocaleString()}
+                  </td>
                   <td className="p-3 font-medium">{sale.documentNumber}</td>
-                  <td className="p-3 capitalize text-yellow-500">{sale.type.replace('_', ' ')}</td>
+                  <td className="p-3 capitalize text-yellow-500">{humanType(sale.type)}</td>
                   <td className="p-3 text-muted-foreground">{sale.customer?.name || 'Consumidor Final'}</td>
-                  <td className="p-3 text-right font-semibold">${sale.total.toFixed(2)}</td>
-                  <td className="p-3 text-right font-semibold text-green-500">${(sale.profit || 0).toFixed(2)}</td>
+                  <td className="p-3 text-right font-semibold">{currency(sale.total)}</td>
+                  <td className="p-3 text-right font-semibold text-green-600">{currency(sale.profit)}</td>
                   <td className="p-3 text-center">
                     <Dialog>
                       <DialogTrigger asChild>
@@ -195,7 +350,13 @@ export default function SalesHistory() {
               ))}
             </tbody>
           </table>
-          {filteredSales.length === 0 && <div className="text-center py-8"><History className="h-12 w-12 text-muted-foreground/50 mx-auto mb-2" /><p className="text-muted-foreground">No se encontraron operaciones.</p></div>}
+
+          {filteredSales.length === 0 && (
+            <div className="text-center py-8">
+              <History className="h-12 w-12 text-muted-foreground/50 mx-auto mb-2" />
+              <p className="text-muted-foreground">No se encontraron operaciones.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

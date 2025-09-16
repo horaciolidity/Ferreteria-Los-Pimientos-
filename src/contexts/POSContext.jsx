@@ -1,9 +1,12 @@
-
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+// src/contexts/POSContext.jsx
+import React, { createContext, useContext, useReducer, useEffect, useMemo } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import { issueDocument } from '@/lib/invoicing';
 
-const POSContext = createContext();
+const POSContext = createContext(null);
+
+/* --------------------- Datos iniciales --------------------- */
+const STORAGE_KEY = 'ferrePOS_data';
 
 const initialState = {
   cart: [],
@@ -11,299 +14,625 @@ const initialState = {
   customers: [],
   providers: [],
   providerRestock: {},
+
   sales: [],
   documents: [],
+
   cashRegister: {
     isOpen: false,
     openingAmount: 0,
     currentAmount: 0,
-    movements: [],
+    movements: [], // {id,type:'income'|'expense'|'opening'|'closing',concept,amount,timestamp}
     openedAt: null,
     closedAt: null,
-    salesByType: { cash: 0, transfer: 0, mixed: 0, credit: 0 }
+    salesByType: { cash: 0, transfer: 0, mixed: 0, credit: 0, card: 0, account: 0 },
   },
   cashClosures: [],
+
   settings: {
     taxRate: 0.21,
     currency: 'ARS',
     companyName: 'Ferretería El Tornillo',
-    companyAddress: 'Av. Principal 123, Ciudad',
-    companyPhone: '+54 11 1234-5678',
+    address: 'Av. Principal 123, Ciudad',
+    phone: '+54 11 1234-5678',
+    cuit: '',
+    ivaCondition: 'CF',
     restockThreshold: 30,
     document: {
-        fontFamily: 'Inter',
-        fontSize: 12,
-        fontColor: '#000000',
-        logoUrl: '',
-        showQr: true,
-        legalFooter: 'Gracias por su compra.',
-        watermark: {
-            text: 'DOCUMENTO NO VÁLIDO',
-            opacity: 0.1,
-            rotation: -45,
-        }
-    }
+      fontFamily: 'Inter',
+      fontSize: 12,
+      fontColor: '#000000',
+      logoUrl: '',
+      showQr: true,
+      legalFooter: 'Gracias por su compra.',
+      watermark: {
+        text: 'DOCUMENTO NO VÁLIDO',
+        opacity: 0.1,
+        rotation: -45,
+      },
+    },
+    invoicing: {
+      enabled: false,
+      provider: 'AFIP', // 'AFIP' | 'ARCA'
+      posNumber: 1,
+      concept: 1,
+      docTypeDefault: 99,
+      ivaCondition: 'CF',
+    },
   },
+
   currentCustomer: null,
-  paymentMethod: 'cash',
-  paymentAmount: 0,
+  paymentMethod: 'cash', // 'cash'|'card'|'transfer'|'mixed'|'credit'|'account'
+  paymentAmount: 0,      // para cash/mixed
   discount: 0,
-  notes: ''
+  notes: '',
 };
 
 const sampleProviders = [
   { id: 'prov1', name: 'Ferretería Central', contactPerson: 'Carlos Ruiz', phone: '11-4567-8901', email: 'compras@central.com' },
-  { id: 'prov2', name: 'Pinturas SA', contactPerson: 'Ana Gomez', phone: '11-2345-6789', email: 'ventas@pinturassa.com' },
-  { id: 'prov3', name: 'Eléctrica Norte', contactPerson: 'Pedro Martin', phone: '11-3456-7890', email: 'pedidos@electricanorte.com' }
+  { id: 'prov2', name: 'Pinturas SA',       contactPerson: 'Ana Gomez',   phone: '11-2345-6789', email: 'ventas@pinturassa.com' },
+  { id: 'prov3', name: 'Eléctrica Norte',   contactPerson: 'Pedro Martin',phone: '11-3456-7890', email: 'pedidos@electricanorte.com' },
 ];
 
 const sampleProducts = [
-  { id: '1', code: '7891234567890', name: 'Tornillo Phillips 3x20mm', price: 15.50, cost: 8.00, stock: 500, unit: 'unidad', category: 'Tornillería', providerId: 'prov1', minStock: 50 },
-  { id: '2', code: '7891234567891', name: 'Pintura Látex Blanco 4L', price: 2850.00, cost: 1900.00, stock: 25, unit: 'unidad', category: 'Pinturas', providerId: 'prov2', minStock: 5 },
-  { id: '3', code: '7891234567892', name: 'Cable Unipolar 2.5mm', price: 180.00, cost: 120.00, stock: 1000, unit: 'metro', category: 'Electricidad', providerId: 'prov3', minStock: 100 },
-  { id: '4', code: '7891234567893', name: 'Martillo 500g', price: 1250.00, cost: 800.00, stock: 15, unit: 'unidad', category: 'Herramientas', providerId: 'prov1', minStock: 3 },
-  { id: '5', code: '7891234567894', name: 'Cemento Portland 50kg', price: 950.00, cost: 650.00, stock: 80, unit: 'kg', category: 'Construcción', providerId: 'prov1', minStock: 20 }
+  { id: '1', code: '7891234567890', name: 'Tornillo Phillips 3x20mm', price: 15.50,  cost: 8.00,   stock: 500, unit: 'unidad', category: 'Tornillería',  providerId: 'prov1', minStock: 50 },
+  { id: '2', code: '7891234567891', name: 'Pintura Látex Blanco 4L',  price: 2850.00, cost: 1900.00, stock: 25,  unit: 'unidad', category: 'Pinturas',    providerId: 'prov2', minStock: 5  },
+  { id: '3', code: '7891234567892', name: 'Cable Unipolar 2.5mm',     price: 180.00,  cost: 120.00, stock: 1000, unit: 'metro',  category: 'Electricidad',providerId: 'prov3', minStock: 100 },
+  { id: '4', code: '7891234567893', name: 'Martillo 500g',            price: 1250.00, cost: 800.00, stock: 15,  unit: 'unidad', category: 'Herramientas', providerId: 'prov1', minStock: 3  },
+  { id: '5', code: '7891234567894', name: 'Cemento Portland 50kg',    price: 950.00,  cost: 650.00, stock: 80,  unit: 'kg',     category: 'Construcción', providerId: 'prov1', minStock: 20 },
 ];
 
 const sampleCustomers = [
-  { id: '1', name: 'Juan Pérez', email: 'juan@email.com', phone: '+541198765432', address: 'Calle Falsa 123', balance: 0, creditLimit: 50000 },
-  { id: '2', name: 'María García', email: 'maria@email.com', phone: '+541155551234', address: 'Av. Libertador 456', balance: -1500, creditLimit: 30000 }
+  { id: '1', name: 'Juan Pérez',  email: 'juan@email.com',  phone: '+541198765432', address: 'Calle Falsa 123', balance: 0,    creditLimit: 50000 },
+  { id: '2', name: 'María García',email: 'maria@email.com', phone: '+541155551234', address: 'Av. Libertador 456', balance: -1500, creditLimit: 30000 },
 ];
 
-
+/* --------------------- Reducer --------------------- */
 function posReducer(state, action) {
   switch (action.type) {
     case 'LOAD_DATA':
       return { ...state, ...action.payload };
+
     case 'UPDATE_SETTINGS':
-      return { ...state, settings: action.payload };
+      return { ...state, settings: { ...state.settings, ...action.payload } };
+
+    /* ------ Carrito ------ */
     case 'ADD_TO_CART': {
-      const existingItem = state.cart.find(item => item.id === action.payload.id && item.price === action.payload.price);
-      if (existingItem) {
-        return { ...state, cart: state.cart.map(item => item.cartId === existingItem.cartId ? { ...item, quantity: item.quantity + action.payload.quantity } : item) };
+      const it = action.payload;
+      const existing = state.cart.find(x => x.id === it.id && Number(x.price) === Number(it.price));
+      if (existing) {
+        return {
+          ...state,
+          cart: state.cart.map(x =>
+            x === existing ? { ...x, quantity: Number(x.quantity) + Number(it.quantity || 1) } : x
+          ),
+        };
       }
-      return { ...state, cart: [...state.cart, { ...action.payload, cartId: Date.now(), itemDiscount: 0, note: '' }] };
+      return {
+        ...state,
+        cart: [
+          ...state.cart,
+          { ...it, cartId: cryptoRandom(), itemDiscount: it.itemDiscount || 0, note: it.note || '' },
+        ],
+      };
     }
     case 'UPDATE_CART_ITEM':
-      return { ...state, cart: state.cart.map(item => item.cartId === action.payload.cartId ? { ...item, ...action.payload.updates } : item) };
+      return {
+        ...state,
+        cart: state.cart.map(i => (i.cartId === action.payload.cartId ? { ...i, ...action.payload.updates } : i)),
+      };
     case 'REMOVE_FROM_CART':
-      return { ...state, cart: state.cart.filter(item => item.cartId !== action.payload) };
+      return { ...state, cart: state.cart.filter(i => i.cartId !== action.payload) };
     case 'CLEAR_CART':
       return { ...state, cart: [], currentCustomer: null, paymentMethod: 'cash', paymentAmount: 0, discount: 0, notes: '' };
-    case 'SET_CUSTOMER':
-      return { ...state, currentCustomer: action.payload };
-    case 'SET_PAYMENT_METHOD':
-      return { ...state, paymentMethod: action.payload };
-    case 'SET_PAYMENT_AMOUNT':
-      return { ...state, paymentAmount: action.payload };
-    case 'SET_DISCOUNT':
-      return { ...state, discount: action.payload };
-    case 'SET_NOTES':
-      return { ...state, notes: action.payload };
+
+    /* ------ Maestro ------ */
+    case 'SET_CUSTOMER':       return { ...state, currentCustomer: action.payload };
+    case 'SET_PAYMENT_METHOD': return { ...state, paymentMethod: action.payload };
+    case 'SET_PAYMENT_AMOUNT': return { ...state, paymentAmount: Number(action.payload || 0) };
+    case 'SET_DISCOUNT':       return { ...state, discount: Number(action.payload || 0) };
+    case 'SET_NOTES':          return { ...state, notes: action.payload || '' };
+
     case 'ADD_PRODUCT':
       return { ...state, products: [...state.products, { ...action.payload, id: Date.now().toString() }] };
     case 'UPDATE_PRODUCT':
-      return { ...state, products: state.products.map(p => p.id === action.payload.id ? { ...p, ...action.payload.updates } : p) };
+      return { ...state, products: state.products.map(p => (p.id === action.payload.id ? { ...p, ...action.payload.updates } : p)) };
     case 'DELETE_PRODUCT':
       return { ...state, products: state.products.filter(p => p.id !== action.payload) };
+
     case 'ADD_CUSTOMER':
       return { ...state, customers: [...state.customers, { ...action.payload, id: Date.now().toString(), balance: 0 }] };
     case 'UPDATE_CUSTOMER':
-      return { ...state, customers: state.customers.map(c => c.id === action.payload.id ? { ...c, ...action.payload.updates } : c) };
+      return { ...state, customers: state.customers.map(c => (c.id === action.payload.id ? { ...c, ...action.payload.updates } : c)) };
+
     case 'ADD_PROVIDER':
       return { ...state, providers: [...state.providers, { ...action.payload, id: Date.now().toString() }] };
     case 'UPDATE_PROVIDER':
-      return { ...state, providers: state.providers.map(p => p.id === action.payload.id ? { ...p, ...action.payload.updates } : p) };
+      return { ...state, providers: state.providers.map(p => (p.id === action.payload.id ? { ...p, ...action.payload.updates } : p)) };
     case 'DELETE_PROVIDER':
       return { ...state, providers: state.providers.filter(p => p.id !== action.payload) };
+
     case 'RESET_PROVIDER_RESTOCK': {
-        const newProviderRestock = { ...state.providerRestock };
-        delete newProviderRestock[action.payload];
-        return { ...state, providerRestock: newProviderRestock };
+      const next = { ...state.providerRestock };
+      delete next[action.payload];
+      return { ...state, providerRestock: next };
     }
+
+    /* ------ Caja ------ */
     case 'OPEN_CASH_REGISTER':
-      return { ...state, cashRegister: { ...initialState.cashRegister, isOpen: true, openingAmount: action.payload, currentAmount: action.payload, openedAt: new Date().toISOString() } };
+      return {
+        ...state,
+        cashRegister: {
+          ...initialState.cashRegister,
+          isOpen: true,
+          openingAmount: Number(action.payload || 0),
+          currentAmount: Number(action.payload || 0),
+          openedAt: new Date().toISOString(),
+          movements: [{
+            id: cryptoRandom(),
+            type: 'opening',
+            concept: 'Apertura',
+            amount: Number(action.payload || 0),
+            timestamp: new Date().toISOString(),
+          }],
+        },
+      };
+    case 'ADD_CASH_MOVEMENT': {
+      if (!state.cashRegister.isOpen) return state;
+      const { type, concept, amount } = action.payload;
+      const signed = type === 'income' ? Number(amount || 0) : -Number(amount || 0);
+      return {
+        ...state,
+        cashRegister: {
+          ...state.cashRegister,
+          currentAmount: Number(state.cashRegister.currentAmount) + signed,
+          movements: [
+            ...state.cashRegister.movements,
+            { id: cryptoRandom(), type, concept, amount: Number(amount || 0), timestamp: new Date().toISOString() },
+          ],
+        },
+      };
+    }
     case 'CLOSE_CASH_REGISTER': {
       const { openingAmount, movements, salesByType, currentAmount } = state.cashRegister;
-      const totalCashSales = salesByType.cash;
-      const cashMovements = movements.reduce((acc, mov) => mov.type === 'income' ? acc + mov.amount : acc - mov.amount, 0);
-      const expectedAmount = openingAmount + totalCashSales + cashMovements;
-      const difference = currentAmount - expectedAmount;
-      const closure = { ...state.cashRegister, closedAt: new Date().toISOString(), expectedAmount, difference };
-      return { ...state, cashRegister: { ...initialState.cashRegister }, cashClosures: [...state.cashClosures, closure] };
+      const totalCashSales = Number(salesByType.cash || 0);
+      const cashMovements = movements.reduce((acc, m) => {
+        if (m.type === 'income')  return acc + Number(m.amount || 0);
+        if (m.type === 'expense') return acc - Number(m.amount || 0);
+        return acc;
+      }, 0);
+      const expectedAmount = Number(openingAmount || 0) + totalCashSales + cashMovements;
+      const difference = Number(currentAmount || 0) - expectedAmount;
+      const closure = {
+        ...state.cashRegister,
+        expectedAmount,
+        difference,
+        closedAt: new Date().toISOString(),
+        movements: [
+          ...state.cashRegister.movements,
+          { id: cryptoRandom(), type: 'closing', concept: 'Cierre', amount: Number(currentAmount || 0), timestamp: new Date().toISOString() },
+        ],
+      };
+      return {
+        ...state,
+        cashRegister: { ...initialState.cashRegister },
+        cashClosures: [...state.cashClosures, closure],
+      };
     }
-    case 'ADD_CASH_MOVEMENT': {
-        if (!state.cashRegister.isOpen) return state;
-        const newCurrentAmount = action.payload.type === 'income' 
-            ? state.cashRegister.currentAmount + action.payload.amount
-            : state.cashRegister.currentAmount - action.payload.amount;
 
-        return { ...state, cashRegister: { ...state.cashRegister, currentAmount: newCurrentAmount, movements: [...state.cashRegister.movements, {...action.payload, id: Date.now(), timestamp: new Date().toISOString()}] }};
-    }
-    case 'PROCESS_SALE': {
-      const { subtotal, tax, total, change, type, document, profit, cart } = action.payload;
-      const sale = { id: Date.now().toString(), items: cart, customer: state.currentCustomer, subtotal, tax, discount: state.discount, total, profit, paymentMethod: state.paymentMethod, paymentAmount: state.paymentAmount, change, notes: state.notes, timestamp: new Date().toISOString(), type, documentNumber: document.number };
-      
-      const newDocuments = [...state.documents, { ...document, saleId: sale.id }];
+    /* ------ Ventas ------ */
+    case 'SAVE_SALE': {
+      const sale = action.payload;
 
-      if (type === 'quote') {
-        return { ...state, sales: [...state.sales, sale], documents: newDocuments, cart: [], currentCustomer: null, paymentMethod: 'cash', paymentAmount: 0, discount: 0, notes: '' };
-      }
-
-      const updatedProducts = state.products.map(p => {
-        const cartItem = cart.find(item => item.id === p.id);
-        return cartItem ? { ...p, stock: Math.max(0, p.stock - cartItem.quantity) } : p;
+      // Descontar stock
+      const products = state.products.map(p => {
+        const sold = sale.items.filter(i => i.id === p.id).reduce((s, i) => s + Number(i.quantity || 0), 0);
+        return sold ? { ...p, stock: Math.max(0, Number(p.stock || 0) - sold) } : p;
       });
 
-      let updatedCashRegister = { ...state.cashRegister };
-      if (state.cashRegister.isOpen) {
-        const cashAmount = state.paymentMethod === 'cash' ? total : (state.paymentMethod === 'mixed' ? state.paymentAmount : 0);
-        if (cashAmount > 0) {
-          updatedCashRegister.currentAmount += cashAmount;
+      // Caja (solo si está abierta)
+      let cashRegister = { ...state.cashRegister };
+      if (cashRegister.isOpen) {
+        const method = sale.payment?.method || state.paymentMethod || 'cash';
+        const total = Number(sale.total || 0);
+        const paid  = Number(sale.payment?.amountPaid || 0);
+        const change = Number(sale.payment?.change || 0);
+
+        // Entradas de efectivo si corresponde
+        if (method === 'cash') {
+          if (total > 0) {
+            cashRegister.currentAmount += total;
+            cashRegister.movements.push({
+              id: cryptoRandom(), type: 'income', concept: `Venta ${sale.documentNumber}`, amount: total, timestamp: new Date().toISOString(),
+            });
+          }
+          if (change > 0) {
+            cashRegister.currentAmount -= change;
+            cashRegister.movements.push({
+              id: cryptoRandom(), type: 'expense', concept: `Vuelto ${sale.documentNumber}`, amount: change, timestamp: new Date().toISOString(),
+            });
+          }
+        } else if (method === 'mixed') {
+          // En mixed tomamos paymentAmount como efectivo aportado
+          const cashPart = Math.min(paid, total);
+          if (cashPart > 0) {
+            cashRegister.currentAmount += cashPart;
+            cashRegister.movements.push({
+              id: cryptoRandom(), type: 'income', concept: `Venta (mixto) ${sale.documentNumber}`, amount: cashPart, timestamp: new Date().toISOString(),
+            });
+          }
         }
-        updatedCashRegister.salesByType[state.paymentMethod] = (updatedCashRegister.salesByType[state.paymentMethod] || 0) + total;
+
+        // Acumular por tipo
+        cashRegister.salesByType[method] = Number(cashRegister.salesByType[method] || 0) + total;
       }
 
-      let updatedCustomers = [...state.customers];
-      if (state.currentCustomer && type === 'credit') {
-        updatedCustomers = state.customers.map(c => c.id === state.currentCustomer.id ? { ...c, balance: c.balance - total } : c);
+      // Cuenta corriente (crédito)
+      let customers = state.customers;
+      if ((sale.type === 'credit' || sale.payment?.method === 'account') && sale.customer?.id) {
+        customers = customers.map(c => (c.id === sale.customer.id ? { ...c, balance: Number(c.balance || 0) - Number(sale.total || 0) } : c));
       }
-      
-      const updatedProviderRestock = { ...state.providerRestock };
-      cart.forEach(item => {
+
+      // providerRestock
+      const providerRestock = { ...state.providerRestock };
+      sale.items.forEach(item => {
         const product = state.products.find(p => p.id === item.id);
         if (product?.providerId) {
-            if (!updatedProviderRestock[product.providerId]) updatedProviderRestock[product.providerId] = {};
-            if (!updatedProviderRestock[product.providerId][item.id]) updatedProviderRestock[product.providerId][item.id] = 0;
-            updatedProviderRestock[product.providerId][item.id] += item.quantity;
+          if (!providerRestock[product.providerId]) providerRestock[product.providerId] = {};
+          providerRestock[product.providerId][item.id] = Number(providerRestock[product.providerId][item.id] || 0) + Number(item.quantity || 0);
         }
       });
 
-      return { ...state, sales: [...state.sales, sale], products: updatedProducts, cashRegister: updatedCashRegister, customers: updatedCustomers, providerRestock: updatedProviderRestock, documents: newDocuments, cart: [], currentCustomer: null, paymentMethod: 'cash', paymentAmount: 0, discount: 0, notes: '' };
-    }
-    case 'CONVERT_QUOTE_TO_SALE': {
-        const quote = action.payload;
-        const tempCartState = { cart: quote.items, discount: quote.discount };
-        const total = calculateTotal(tempCartState.cart, tempCartState.discount, state.settings.taxRate);
+      // Documentos (meta)
+      const documents = [
+        ...state.documents,
+        {
+          saleId: sale.id,
+          number: sale.documentNumber,
+          pdf_url: sale.fiscal?.pdf_url || null,
+          provider: sale.fiscal?.provider || null,
+          cae: sale.fiscal?.cae || null,
+          cae_due_date: sale.fiscal?.cae_due_date || null,
+          training: !!sale.fiscal?.training,
+          created_at: sale.timestamp,
+        },
+      ];
 
-        const salePayload = {
-            ...quote,
-            cart: quote.items,
-            type: 'sale',
-            document: { number: `F-${Date.now()}`, pdf_url: null, id: null },
-            total: total,
-            profit: calculateProfit(quote.items)
-        };
-        
-        const nextState = posReducer(state, { type: 'PROCESS_SALE', payload: salePayload });
-
-        return { ...nextState, sales: nextState.sales.map(s => s.id === quote.id ? {...s, type: 'converted_quote'} : s) };
+      return {
+        ...state,
+        sales: [sale, ...state.sales],
+        products,
+        cashRegister,
+        customers,
+        providerRestock,
+        documents,
+        cart: [],
+        currentCustomer: null,
+        paymentMethod: 'cash',
+        paymentAmount: 0,
+        discount: 0,
+        notes: '',
+      };
     }
+
+    // Compatibilidad con tu código anterior que dispatch-eaba PROCESS_SALE
+    case 'PROCESS_SALE': {
+      // Mantengo compat: deriva a SAVE_SALE esperando el payload de antes
+      const p = action.payload;
+      const sale = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        type: p.type || 'sale',
+        items: p.cart || [],
+        subtotal: Number(p.subtotal || 0),
+        itemDiscounts: (p.cart || []).reduce((s, it) => s + Number(it.itemDiscount || 0), 0),
+        discount: Number(p.discount || 0),
+        taxAmount: Number(p.tax || 0),
+        total: Number(p.total || 0),
+        profit: Number(p.profit || 0),
+        payment: {
+          method: p.paymentMethod || 'cash',
+          amountPaid: Number(p.paymentAmount || 0),
+          change: Number(p.change || 0),
+        },
+        paymentMethod: p.paymentMethod || 'cash', // legacy
+        paymentAmount: Number(p.paymentAmount || 0), // legacy
+        change: Number(p.change || 0),               // legacy
+        notes: p.notes || '',
+        customer: p.customer || null,
+        documentNumber: p.document?.number || `TEMP-${Date.now()}`,
+        fiscal: {
+          training: !p.document?.pdf_url, provider: 'none',
+          cae: null, cae_due_date: null, pdf_url: p.document?.pdf_url || null,
+        },
+      };
+      return posReducer(state, { type: 'SAVE_SALE', payload: sale });
+    }
+
     default:
       return state;
   }
 }
 
-const calculateSubtotal = (cart) => (cart || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
-const calculateTotal = (cart, discount, taxRate) => {
-    const subtotal = calculateSubtotal(cart);
-    const itemDiscounts = (cart || []).reduce((sum, item) => sum + (item.itemDiscount || 0), 0);
-    const totalWithItemDiscounts = subtotal - itemDiscounts;
-    const tax = totalWithItemDiscounts * taxRate;
-    return totalWithItemDiscounts + tax - discount;
-};
-const calculateProfit = (cart) => (cart || []).reduce((sum, item) => sum + ((item.price - item.cost) * item.quantity - (item.itemDiscount || 0)), 0);
+/* --------------------- Helpers de cálculo --------------------- */
+const calcSubtotal = (cart) =>
+  (cart || []).reduce((sum, it) => sum + Number(it.price || 0) * Number(it.quantity || 0), 0);
 
+const calcItemDiscounts = (cart) =>
+  (cart || []).reduce((sum, it) => sum + Number(it.itemDiscount || 0), 0);
+
+const calcDetail = (cart, discount, taxRate) => {
+  const subtotal = calcSubtotal(cart);
+  const itemDiscounts = calcItemDiscounts(cart);
+  const base = subtotal - itemDiscounts;
+  const taxAmount = Number((base * Number(taxRate || 0)).toFixed(2));
+  const total = Number((base + taxAmount - Number(discount || 0)).toFixed(2));
+  return { subtotal, itemDiscounts, base, taxAmount, total };
+};
+
+const calcProfit = (cart) =>
+  (cart || []).reduce((sum, it) => sum + (Number(it.price || 0) - Number(it.cost || 0)) * Number(it.quantity || 0), 0);
+
+/* --------------------- Provider --------------------- */
 export function POSProvider({ children }) {
   const [state, dispatch] = useReducer(posReducer, initialState);
 
+  // Carga desde storage con merge y seeds
   useEffect(() => {
     try {
-      const savedData = localStorage.getItem('ferrePOS_data');
-      if (savedData) {
-        const parsedData = JSON.parse(savedData);
-        const mergedSettings = { ...initialState.settings, ...parsedData.settings, document: { ...initialState.settings.document, ...parsedData.settings?.document, watermark: { ...initialState.settings.document.watermark, ...parsedData.settings?.document?.watermark } } };
-        const dataToLoad = {
-          ...initialState,
-          ...parsedData,
-          settings: mergedSettings,
-          products: (parsedData.products && parsedData.products.length > 0) ? parsedData.products : sampleProducts,
-          customers: (parsedData.customers && parsedData.customers.length > 0) ? parsedData.customers : sampleCustomers,
-          providers: (parsedData.providers && parsedData.providers.length > 0) ? parsedData.providers : sampleProviders,
-          providerRestock: parsedData.providerRestock || {},
-          cashRegister: parsedData.cashRegister ? {...initialState.cashRegister, ...parsedData.cashRegister} : initialState.cashRegister
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const mergedSettings = {
+          ...initialState.settings,
+          ...(parsed.settings || {}),
+          document: {
+            ...initialState.settings.document,
+            ...(parsed.settings?.document || {}),
+            watermark: {
+              ...initialState.settings.document.watermark,
+              ...(parsed.settings?.document?.watermark || {}),
+            },
+          },
         };
-        dispatch({ type: 'LOAD_DATA', payload: dataToLoad });
+        dispatch({
+          type: 'LOAD_DATA',
+          payload: {
+            ...initialState,
+            ...parsed,
+            settings: mergedSettings,
+            products: parsed.products?.length ? parsed.products : sampleProducts,
+            customers: parsed.customers?.length ? parsed.customers : sampleCustomers,
+            providers: parsed.providers?.length ? parsed.providers : sampleProviders,
+            providerRestock: parsed.providerRestock || {},
+            cashRegister: parsed.cashRegister
+              ? { ...initialState.cashRegister, ...parsed.cashRegister }
+              : initialState.cashRegister,
+          },
+        });
       } else {
-        dispatch({ type: 'LOAD_DATA', payload: { ...initialState, products: sampleProducts, customers: sampleCustomers, providers: sampleProviders }});
+        dispatch({
+          type: 'LOAD_DATA',
+          payload: {
+            ...initialState,
+            products: sampleProducts,
+            customers: sampleCustomers,
+            providers: sampleProviders,
+          },
+        });
       }
-    } catch (error) {
-      console.error('Error loading saved data:', error);
-      dispatch({ type: 'LOAD_DATA', payload: { ...initialState, products: sampleProducts, customers: sampleCustomers, providers: sampleProviders }});
+    } catch (e) {
+      console.error('Error loading saved data:', e);
+      dispatch({
+        type: 'LOAD_DATA',
+        payload: {
+          ...initialState,
+          products: sampleProducts,
+          customers: sampleCustomers,
+          providers: sampleProviders,
+        },
+      });
     }
   }, []);
 
+  // Persistencia + BroadcastChannel
   useEffect(() => {
-    const dataToSave = { ...state, cart: undefined };
-    localStorage.setItem('ferrePOS_data', JSON.stringify(dataToSave));
+    const toSave = { ...state, cart: undefined }; // no persistimos carrito si no querés
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+
     const channel = new BroadcastChannel('ferrePOS');
-    channel.postMessage({ type: 'STATE_UPDATE', cart: state.cart, currentCustomer: state.currentCustomer, paymentMethod: state.paymentMethod, paymentAmount: state.paymentAmount, discount: state.discount, total: calculateTotal(state.cart, state.discount, state.settings.taxRate) });
+    const d = calcDetail(state.cart, state.discount, state.settings.taxRate);
+    channel.postMessage({
+      type: 'STATE_UPDATE',
+      cart: state.cart,
+      currentCustomer: state.currentCustomer,
+      paymentMethod: state.paymentMethod,
+      paymentAmount: state.paymentAmount,
+      discount: state.discount,
+      total: d.total,
+    });
     channel.close();
   }, [state]);
 
+  /* --------------------- API expuesta --------------------- */
   const addToCart = (product, quantity = 1, customPrice = null, note = '') => {
-    if (quantity <= 0) { toast({ title: "Error", description: "La cantidad debe ser mayor a 0", variant: "destructive" }); return; }
-    if (quantity > product.stock && product.unit === 'unidad') { toast({ title: "Stock insuficiente", description: `Solo hay ${product.stock} ${product.unit}(s) disponibles`, variant: "destructive" }); return; }
-    dispatch({ type: 'ADD_TO_CART', payload: { ...product, quantity, price: customPrice ?? product.price, note } });
-    toast({ title: "Producto agregado", description: `${product.name} x${quantity}` });
+    if (!product) return;
+    if (Number(quantity) <= 0) {
+      toast({ title: 'Error', description: 'La cantidad debe ser mayor a 0', variant: 'destructive' });
+      return;
+    }
+    if (product.unit === 'unidad' && Number(quantity) > Number(product.stock || 0)) {
+      toast({
+        title: 'Stock insuficiente',
+        description: `Solo hay ${product.stock} ${product.unit}(s) disponibles`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    dispatch({
+      type: 'ADD_TO_CART',
+      payload: {
+        ...product,
+        quantity: Number(quantity || 1),
+        price: Number(customPrice ?? product.price ?? 0),
+        note: note || '',
+      },
+    });
+    toast({ title: 'Producto agregado', description: `${product.name} x${quantity}` });
   };
 
-  const processSale = async (type = 'sale') => {
-    if (state.cart.length === 0) { toast({ title: "Error", description: "El carrito está vacío", variant: "destructive" }); return; }
-    const total = calculateTotal(state.cart, state.discount, state.settings.taxRate);
-    const profit = calculateProfit(state.cart);
-    const change = state.paymentMethod === 'cash' ? Math.max(0, state.paymentAmount - total) : 0;
-    if (type !== 'quote' && type !== 'credit' && state.paymentMethod === 'cash' && state.paymentAmount < total) { toast({ title: "Error", description: "El monto pagado es insuficiente", variant: "destructive" }); return; }
-    if (type === 'credit' && !state.currentCustomer) { toast({ title: "Error", description: "Debe seleccionar un cliente para venta a cuenta", variant: "destructive" }); return; }
-    
-    let document = { number: `TEMP-${Date.now()}`, pdf_url: null, id: null };
-    try {
-        toast({ title: "🚧 API no implementada, usando numeración temporal." });
-    } catch (error) { console.log('API not available, using training mode'); }
+  const setPaymentMethod = (m) => dispatch({ type: 'SET_PAYMENT_METHOD', payload: m });
+  const setPaymentAmount = (v) => dispatch({ type: 'SET_PAYMENT_AMOUNT', payload: v });
+  const applyDiscount = (v) => dispatch({ type: 'SET_DISCOUNT', payload: v });
 
-    dispatch({ type: 'PROCESS_SALE', payload: { cart: state.cart, subtotal: calculateSubtotal(state.cart), tax: calculateSubtotal(state.cart) * state.settings.taxRate, total, change, type, document, profit } });
-    toast({ title: "Operación procesada", description: `${type.charAt(0).toUpperCase() + type.slice(1)}: ${document.number}` });
+  const calculateDetail = () => calcDetail(state.cart, state.discount, state.settings.taxRate);
+  const calculateTotal = () => calculateDetail().total;
+  const calculateProfit = () => calcProfit(state.cart);
+
+  // Proceso principal (híbrido AFIP/ARCA)
+  const processSale = async (type = 'sale') => {
+    if (!state.cart.length) {
+      toast({ title: 'Error', description: 'El carrito está vacío', variant: 'destructive' });
+      return null;
+    }
+    const { subtotal, itemDiscounts, taxAmount, total } = calculateDetail();
+    const profit = calculateProfit();
+
+    // Validaciones
+    if (type !== 'quote' && type !== 'credit') {
+      if (state.paymentMethod === 'cash' && Number(state.paymentAmount) < total) {
+        toast({
+          title: 'Pago insuficiente',
+          description: `Total: $${total.toFixed(2)} / Pagado: $${Number(state.paymentAmount).toFixed(2)}`,
+          variant: 'destructive',
+        });
+        return null;
+      }
+    }
+    if (type === 'credit' && !state.currentCustomer) {
+      toast({ title: 'Error', description: 'Debe seleccionar un cliente para venta a cuenta', variant: 'destructive' });
+      return null;
+    }
+
+    // Construyo base de venta
+    const sale = {
+      id: cryptoRandom(),
+      timestamp: new Date().toISOString(),
+      type, // 'sale' | 'remit' | 'quote' | 'credit'
+      items: state.cart.map(it => ({
+        id: it.id, code: it.code, name: it.name,
+        quantity: Number(it.quantity || 0),
+        price: Number(it.price || 0),
+        cost: Number(it.cost || 0),
+        itemDiscount: Number(it.itemDiscount || 0),
+        note: it.note || '',
+      })),
+      subtotal: Number(subtotal.toFixed(2)),
+      itemDiscounts: Number(itemDiscounts.toFixed(2)),
+      discount: Number(state.discount || 0),
+      taxAmount: Number(taxAmount.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      profit: Number(profit.toFixed(2)),
+      payment: {
+        method: state.paymentMethod,
+        amountPaid: Number(state.paymentAmount || 0),
+        change: state.paymentMethod === 'cash' ? Number(Math.max(0, (state.paymentAmount || 0) - total).toFixed(2)) : 0,
+      },
+      // compat legacy
+      paymentMethod: state.paymentMethod,
+      paymentAmount: Number(state.paymentAmount || 0),
+      change: state.paymentMethod === 'cash' ? Number(Math.max(0, (state.paymentAmount || 0) - total).toFixed(2)) : 0,
+
+      customer: state.currentCustomer,
+      notes: state.notes || '',
+      documentNumber: null,
+      fiscal: { training: true, provider: 'none', cae: null, cae_due_date: null, pdf_url: null, extra: {} },
+    };
+
+    // Híbrido: solo 'sale' y 'credit' intentan emitir
+    if (['sale', 'credit'].includes(type) && state.settings.invoicing?.enabled) {
+      try {
+        const doc = await issueDocument({ sale, settings: state.settings });
+        sale.documentNumber = doc.number;
+        sale.fiscal = {
+          training: !!doc.training,
+          provider: doc.provider || state.settings.invoicing?.provider || 'none',
+          cae: doc.cae || null,
+          cae_due_date: doc.cae_due_date || null,
+          pdf_url: doc.pdf_url || null,
+          extra: doc.extra || {},
+        };
+      } catch (e) {
+        console.error('IssueDocument error', e);
+        sale.documentNumber = `TEMP-${Date.now()}`;
+        sale.fiscal = { ...sale.fiscal, training: true };
+      }
+    } else {
+      sale.documentNumber = `TEMP-${Date.now()}`;
+    }
+
+    // Guardar venta
+    dispatch({ type: 'SAVE_SALE', payload: sale });
+
+    toast({
+      title: type === 'quote' ? 'Presupuesto registrado' : 'Venta registrada',
+      description: sale.fiscal.training ? 'Documento temporal (modo entrenamiento)' : `Comprobante ${sale.documentNumber}`,
+    });
+
+    return sale;
   };
 
   const addCustomer = (customerData) => {
-    if (!customerData.name?.trim() || !customerData.phone?.trim()) {
-      toast({ title: "Error", description: "Nombre y teléfono son requeridos", variant: "destructive" });
+    if (!customerData?.name?.trim() || !customerData?.phone?.trim()) {
+      toast({ title: 'Error', description: 'Nombre y teléfono son requeridos', variant: 'destructive' });
       return null;
     }
     const newCustomer = { ...customerData, id: Date.now().toString(), balance: 0, creditLimit: customerData.creditLimit || 0 };
     dispatch({ type: 'ADD_CUSTOMER', payload: newCustomer });
-    toast({ title: "Cliente agregado", description: `${newCustomer.name} ha sido agregado.` });
+    toast({ title: 'Cliente agregado', description: `${newCustomer.name} ha sido agregado.` });
     return newCustomer;
   };
-  
+
   const addProvider = (providerData) => {
-      if (!providerData.name?.trim()) {
-          toast({ title: "Error", description: "El nombre del proveedor es requerido.", variant: "destructive" });
-          return null;
-      }
-      const newProvider = { ...providerData, id: Date.now().toString() };
-      dispatch({ type: 'ADD_PROVIDER', payload: newProvider });
-      toast({ title: "Proveedor agregado", description: `${newProvider.name} ha sido agregado.`});
-      return newProvider;
+    if (!providerData?.name?.trim()) {
+      toast({ title: 'Error', description: 'El nombre del proveedor es requerido.', variant: 'destructive' });
+      return null;
+    }
+    const newProvider = { ...providerData, id: Date.now().toString() };
+    dispatch({ type: 'ADD_PROVIDER', payload: newProvider });
+    toast({ title: 'Proveedor agregado', description: `${newProvider.name} ha sido agregado.` });
+    return newProvider;
   };
 
-  const value = { state, dispatch, addToCart, calculateSubtotal: () => calculateSubtotal(state.cart), calculateTax: () => calculateSubtotal(state.cart) * state.settings.taxRate, calculateTotal: () => calculateTotal(state.cart, state.discount, state.settings.taxRate), calculateProfit: () => calculateProfit(state.cart), processSale, addCustomer, addProvider };
+  const value = useMemo(() => ({
+    state,
+    dispatch,
+    addToCart,
+    setPaymentMethod,
+    setPaymentAmount,
+    applyDiscount,
+    calculateSubtotal: () => calcSubtotal(state.cart),
+    calculateTax: () => Number(calcSubtotal(state.cart) * Number(state.settings.taxRate || 0)),
+    calculateTotal,
+    calculateProfit,
+    calculateDetail,
+    processSale,
+    addCustomer,
+    addProvider,
+  }), [state]);
 
   return <POSContext.Provider value={value}>{children}</POSContext.Provider>;
 }
 
+/* --------------------- Hooks --------------------- */
 export const usePOS = () => {
-  const context = useContext(POSContext);
-  if (!context) throw new Error('usePOS must be used within a POSProvider');
-  return context;
+  const ctx = useContext(POSContext);
+  if (!ctx) throw new Error('usePOS must be used within a POSProvider');
+  return ctx;
 };
+
+/* --------------------- Utils --------------------- */
+function cryptoRandom() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `id_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
