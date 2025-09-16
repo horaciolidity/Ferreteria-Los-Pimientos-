@@ -1,14 +1,57 @@
 <!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<link rel="icon" type="image/svg+xml" href="/vite.svg" />
-		<meta name="generator" content="Hostinger Horizons" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Hostinger Horizons</title>
-	</head>
-	<body>
-		<div id="root"></div>
-		<script type="module" src="/src/main.jsx"></script>
-	</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FerrePOS</title>
+
+    <style>
+      :root{
+        /* si querés cambiar la imagen/opacity sin tocar el CSS */
+        --hero-image: url('/hero.jpg');
+        --hero-opacity: 0.6;           /* transparencia del fondo */
+        --hero-height: 360px;          /* alto de la franja superior */
+      }
+      html, body, #root { height: 100%; }
+      body { margin: 0; background: var(--app-bg, #0b0b0b); }
+
+      /* Capa de fondo (detrás de todo) */
+      #hero-bg{
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        height: var(--hero-height);
+        z-index: 0;
+        pointer-events: none;          /* que no capture clicks */
+        background-image:
+          /* degradado encima de la foto (oscurece y desvanece hacia abajo) */
+          linear-gradient(
+            to bottom,
+            rgba(0,0,0,0.55),
+            rgba(0,0,0,0.35) 35%,
+            rgba(0,0,0,0.10) 70%,
+            rgba(0,0,0,0.00) 100%
+          ),
+          var(--hero-image);
+        background-size: cover;
+        background-position: center top;
+        opacity: var(--hero-opacity);
+        filter: saturate(0.95) contrast(1.05);
+        /* fade extra al final por si querés suavizar más el corte */
+        -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 75%, rgba(0,0,0,0) 100%);
+                mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 75%, rgba(0,0,0,0) 100%);
+      }
+
+      /* Asegura que tu app quede por encima del fondo */
+      #root{ position: relative; z-index: 1; }
+    </style>
+  </head>
+  <body>
+    <!-- Fondo superior fijo (detrás de todo) -->
+    <div id="hero-bg"></div>
+
+    <!-- Tu app -->
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
