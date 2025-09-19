@@ -196,3 +196,42 @@
   .print-hidden { display: none !important; }
   .print-only { display: block !important; }
 }
+/* Ticket 80mm perfectamente centrado y a ancho real */
+.ticket-80mm {
+  width: 80mm;
+  margin: 0 auto;        /* centra en la vista previa */
+  background: #fff;
+  color: #000;
+}
+
+/* líneas y cortes útiles en el ticket */
+.ticket-80mm .line {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+}
+.ticket-80mm .cut {
+  margin: 6px 0;
+  border-top: 1px dashed #000;
+}
+
+/* Impresión */
+@media print {
+  /* A4: cuando estás en pestaña A4 */
+  .print-area {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  /* Ticket: cuando imprimes desde la pestaña 80mm */
+  .ticket-80mm {
+    width: 80mm !important;
+    margin: 0 auto !important;
+  }
+  @page {
+    /* OJO: el navegador solo toma un @page. Si vas a imprimir el ticket,
+       Chrome ajusta a "80mm x auto" respetando el contenido. */
+    size: auto;
+    margin: 5mm;
+  }
+}

@@ -1,14 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import { CreditCard, DollarSign, Receipt, FileText, Calculator, Users } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { usePOS } from '@/contexts/POSContext';
-import DocumentPreview from '@/components/pos/DocumentPreview';
+// src/components/pos/PaymentPanel.jsx
+import React, { useState, useEffect } from "react";
+import {
+  CreditCard,
+  DollarSign,
+  Receipt,
+  FileText,
+  Calculator,
+  Users,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { usePOS } from "@/contexts/POSContext";
+import DocumentPreview from "@/components/pos/DocumentPreview";
 
 export default function PaymentPanel() {
+  // Tomamos dispatch porque tu contexto lo expone (sirve para setear cliente)
+  const pos = usePOS();
   const {
     state,
     setPaymentMethod,
@@ -16,46 +38,64 @@ export default function PaymentPanel() {
     applyDiscount,
     calculateTotal,
     addCustomer,
-    setCustomerById,   // helper del contexto
-    setCustomer,       // opcional
-  } = usePOS();
+  } = pos;
+  const dispatch = pos?.dispatch;
 
   const [isCustomerDialogOpen, setIsCustomerDialogOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [documentType, setDocumentType] = useState('sale');
-
+  const [documentType, setDocumentType] = useState("sale"); // sale | remit | quote | credit
   const [newCustomer, setNewCustomer] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    address: '',
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
     creditLimit: 0,
   });
 
   const total = calculateTotal();
-  const paid = Number(state.paymentAmount || 0);
-  const change = state.paymentMethod === 'cash' ? Math.max(0, paid - total) : 0;
+  const change =
+    state.paymentMethod === "cash"
+      ? Math.max(0, Number(state.paymentAmount || 0) - total)
+      : 0;
 
+  // Autorrellena para transferencia
   useEffect(() => {
-    if (state.paymentMethod === 'transfer') {
-      setPaymentAmount(total); // autollenar
+    if (state.paymentMethod === "transfer") {
+      setPaymentAmount(total);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.paymentMethod, total]);
 
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method);
-    if (method === 'transfer') setPaymentAmount(total);
-    if (method === 'cash' || method === 'mixed') setPaymentAmount(''); // evitar "0"
+    if (method === "transfer") {
+      setPaymentAmount(total);
+    } else if (method === "cash" || method === "mixed") {
+      // dejamos el input vacío para que no aparezca el 0 “adelante”
+      setPaymentAmount("");
+    }
+  };
+
+  const setCustomerSafe = (customer) => {
+    try {
+      if (typeof dispatch === "function") {
+        dispatch({ type: "SET_CUSTOMER", payload: customer || null });
+      }
+    } catch (_) {}
   };
 
   const handleAddNewCustomer = () => {
     const created = addCustomer(newCustomer);
     if (created) {
-      if (setCustomerById) setCustomerById(created.id);
-      else if (setCustomer) setCustomer(created);
+      setCustomerSafe(created);
       setIsCustomerDialogOpen(false);
-      setNewCustomer({ name: '', phone: '', email: '', address: '', creditLimit: 0 });
+      setNewCustomer({
+        name: "",
+        phone: "",
+        email: "",
+        address: "",
+        creditLimit: 0,
+      });
     }
   };
 
@@ -68,7 +108,9 @@ export default function PaymentPanel() {
     return (
       <div className="card-glass p-6 rounded-lg text-center py-16">
         <Calculator className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
-        <p className="text-muted-foreground text-lg">Agregá productos para pagar</p>
+        <p className="text-muted-foreground text-lg">
+          Agregá productos para pagar
+        </p>
       </div>
     );
   }
@@ -83,8 +125,11 @@ export default function PaymentPanel() {
           <Label>Cliente (opcional)</Label>
           <div className="flex space-x-2">
             <Select
-              onValueChange={(id) => setCustomerById(id)}
-              value={state.currentCustomer?.id || ''}
+              onValueChange={(val) => {
+                const customer = state.customers.find((c) => c.id === val);
+                setCustomerSafe(customer);
+              }}
+              value={state.currentCustomer?.id || ""}
             >
               <SelectTrigger className="flex-1 h-12 text-base">
                 <SelectValue placeholder="Seleccionar cliente" />
@@ -105,7 +150,7 @@ export default function PaymentPanel() {
 
             <Dialog open={isCustomerDialogOpen} onOpenChange={setIsCustomerDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" className="h-12 w-12" title="Nuevo cliente">
+                <Button variant="outline" className="h-12 w-12">
                   <Users />
                 </Button>
               </DialogTrigger>
@@ -119,7 +164,9 @@ export default function PaymentPanel() {
                     <Input
                       id="customerName"
                       value={newCustomer.name}
-                      onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                      onChange={(e) =>
+                        setNewCustomer({ ...newCustomer, name: e.target.value })
+                      }
                     />
                   </div>
                   <div>
@@ -127,7 +174,9 @@ export default function PaymentPanel() {
                     <Input
                       id="customerPhone"
                       value={newCustomer.phone}
-                      onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                      onChange={(e) =>
+                        setNewCustomer({ ...newCustomer, phone: e.target.value })
+                      }
                     />
                   </div>
                   <div>
@@ -136,7 +185,9 @@ export default function PaymentPanel() {
                       id="customerEmail"
                       type="email"
                       value={newCustomer.email}
-                      onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                      onChange={(e) =>
+                        setNewCustomer({ ...newCustomer, email: e.target.value })
+                      }
                     />
                   </div>
                   <div>
@@ -144,7 +195,9 @@ export default function PaymentPanel() {
                     <Input
                       id="customerAddress"
                       value={newCustomer.address}
-                      onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })}
+                      onChange={(e) =>
+                        setNewCustomer({ ...newCustomer, address: e.target.value })
+                      }
                     />
                   </div>
                   <div>
@@ -152,12 +205,13 @@ export default function PaymentPanel() {
                     <Input
                       id="creditLimit"
                       type="number"
+                      step="1"
                       min="0"
                       value={newCustomer.creditLimit}
                       onChange={(e) =>
                         setNewCustomer({
                           ...newCustomer,
-                          creditLimit: parseFloat(e.target.value) || 0,
+                          creditLimit: e.target.value === "" ? 0 : Number(e.target.value),
                         })
                       }
                     />
@@ -182,8 +236,8 @@ export default function PaymentPanel() {
           <div className="grid grid-cols-3 gap-2">
             <Button
               size="lg"
-              variant={state.paymentMethod === 'cash' ? 'default' : 'outline'}
-              onClick={() => handlePaymentMethodChange('cash')}
+              variant={state.paymentMethod === "cash" ? "default" : "outline"}
+              onClick={() => handlePaymentMethodChange("cash")}
               className="h-14 text-base"
             >
               <DollarSign className="h-5 w-5 mr-2" />
@@ -191,8 +245,8 @@ export default function PaymentPanel() {
             </Button>
             <Button
               size="lg"
-              variant={state.paymentMethod === 'transfer' ? 'default' : 'outline'}
-              onClick={() => handlePaymentMethodChange('transfer')}
+              variant={state.paymentMethod === "transfer" ? "default" : "outline"}
+              onClick={() => handlePaymentMethodChange("transfer")}
               className="h-14 text-base"
             >
               <CreditCard className="h-5 w-5 mr-2" />
@@ -200,8 +254,8 @@ export default function PaymentPanel() {
             </Button>
             <Button
               size="lg"
-              variant={state.paymentMethod === 'mixed' ? 'default' : 'outline'}
-              onClick={() => handlePaymentMethodChange('mixed')}
+              variant={state.paymentMethod === "mixed" ? "default" : "outline"}
+              onClick={() => handlePaymentMethodChange("mixed")}
               className="h-14 text-base"
             >
               Mixto
@@ -210,21 +264,24 @@ export default function PaymentPanel() {
         </div>
 
         {/* Monto en efectivo (si aplica) */}
-        {state.paymentMethod !== 'transfer' && (
+        {state.paymentMethod !== "transfer" && (
           <div className="space-y-2">
             <Label htmlFor="paymentAmount">
-              Monto {state.paymentMethod === 'cash' ? 'recibido' : 'en efectivo'}
+              Monto {state.paymentMethod === "cash" ? "recibido" : "en efectivo"}
             </Label>
             <Input
               id="paymentAmount"
               type="number"
               step="0.01"
               min="0"
-              value={state.paymentAmount}
-              onChange={(e) => setPaymentAmount(e.target.value)} // permite '' sin forzar 0
+              // Permitimos string vacío para que no aparezca “0”
+              value={state.paymentAmount === "" ? "" : state.paymentAmount}
+              onChange={(e) =>
+                setPaymentAmount(e.target.value === "" ? "" : Number(e.target.value))
+              }
               className="h-12 text-lg"
             />
-            {state.paymentMethod === 'cash' && change > 0 && (
+            {state.paymentMethod === "cash" && change > 0 && (
               <div className="text-green-600 font-semibold text-lg">
                 Vuelto: ${change.toFixed(2)}
               </div>
@@ -241,7 +298,9 @@ export default function PaymentPanel() {
             step="0.01"
             min="0"
             value={state.discount}
-            onChange={(e) => applyDiscount(parseFloat(e.target.value) || 0)}
+            onChange={(e) =>
+              applyDiscount(e.target.value === "" ? 0 : Number(e.target.value))
+            }
             className="h-12 text-lg"
           />
         </div>
@@ -257,7 +316,7 @@ export default function PaymentPanel() {
           <Button
             id="btn-invoice"
             size="lg"
-            onClick={() => handleFinalize('sale')}
+            onClick={() => handleFinalize("sale")}
             disabled={!state.cashRegister.isOpen}
             className="h-16 text-lg bg-green-600 hover:bg-green-700 disabled:opacity-50"
           >
@@ -268,7 +327,7 @@ export default function PaymentPanel() {
           <Button
             id="btn-remit"
             size="lg"
-            onClick={() => handleFinalize('remit')}
+            onClick={() => handleFinalize("remit")}
             variant="outline"
             className="h-16 text-lg"
           >
@@ -279,7 +338,7 @@ export default function PaymentPanel() {
           <Button
             id="btn-quote"
             size="lg"
-            onClick={() => handleFinalize('quote')}
+            onClick={() => handleFinalize("quote")}
             variant="outline"
             className="h-16 text-lg col-span-2 border-yellow-500 text-yellow-500 hover:bg-yellow-500/10 hover:text-yellow-500"
           >
@@ -288,7 +347,7 @@ export default function PaymentPanel() {
           </Button>
 
           <Button
-            onClick={() => handleFinalize('credit')}
+            onClick={() => handleFinalize("credit")}
             variant="outline"
             size="lg"
             disabled={!state.currentCustomer}
@@ -306,6 +365,7 @@ export default function PaymentPanel() {
         )}
       </div>
 
+      {/* Preview: confirma y emite (DocumentPreview llama a processSale) */}
       <DocumentPreview
         isOpen={isPreviewOpen}
         onOpenChange={setIsPreviewOpen}
