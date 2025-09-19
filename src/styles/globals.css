@@ -1,4 +1,3 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -31,7 +30,7 @@
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
   }
- 
+
   .dark {
     --background: 224 71% 4%; /* Dark blue for dark theme */
     --foreground: 210 40% 98%; /* Whiteish for dark theme */
@@ -54,7 +53,7 @@
     --ring: 217.2 91.2% 59.8%;
   }
 }
- 
+
 @layer base {
   * {
     @apply border-border;
@@ -69,22 +68,18 @@
   width: 8px; /* For vertical scrollbars */
   height: 8px; /* For horizontal scrollbars */
 }
-
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent; /* Makes the track invisible */
 }
-
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background-color: hsl(var(--primary) / 0.5); /* Slightly transparent primary color */
   border-radius: 4px; /* Rounded corners */
   border: 2px solid transparent; /* Ensures border doesn't cover actual scrollbar */
   background-clip: padding-box; /* Ensures background stops at border */
 }
-
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background-color: hsl(var(--primary)); /* Solid primary color on hover */
 }
-
 
 /* Glassmorphism Effect */
 .glass-effect {
@@ -105,17 +100,10 @@
 .pulse-glow {
   animation: pulse-glow 2s infinite ease-in-out;
 }
-
 @keyframes pulse-glow {
-  0% {
-    box-shadow: 0 0 5px hsl(var(--primary) / 0.7);
-  }
-  50% {
-    box-shadow: 0 0 15px hsl(var(--primary));
-  }
-  100% {
-    box-shadow: 0 0 5px hsl(var(--primary) / 0.7);
-  }
+  0% { box-shadow: 0 0 5px hsl(var(--primary) / 0.7); }
+  50% { box-shadow: 0 0 15px hsl(var(--primary)); }
+  100% { box-shadow: 0 0 5px hsl(var(--primary) / 0.7); }
 }
 
 /* POS Grid Layout */
@@ -124,7 +112,6 @@
   grid-template-columns: 1fr 2fr; /* Default for larger screens */
   gap: 24px;
 }
-
 @media (max-width: 1024px) { /* Adjust for medium screens */
   .pos-grid {
     grid-template-columns: 1fr;
@@ -133,22 +120,79 @@
 
 /* Custom styles for shadcn/ui Tabs */
 .tabs-list {
-    @apply inline-flex items-center justify-center rounded-md bg-muted p-1 text-muted-foreground;
+  @apply inline-flex items-center justify-center rounded-md bg-muted p-1 text-muted-foreground;
 }
-
 .tabs-trigger {
-    @apply inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm;
+  @apply inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm;
 }
 
 /* Custom styles for select */
 .select-trigger {
   @apply flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
 }
-
 .select-content {
   @apply relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2;
 }
-
 .select-item {
   @apply relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50;
+}
+
+/* =========================
+   PRINT & TICKET 80mm
+   ========================= */
+
+/* Forzar colores en impresión incluso en dark mode */
+@media print {
+  html, body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  /* Ocultá elementos no imprimibles y mostr&aacute; los específicos */
+  .print-hidden { display: none !important; }
+  .print-only { display: block !important; }
+}
+
+/* Margen de página estándar (A4 y ticket en general) */
+@page {
+  size: auto;
+  margin: 6mm;
+}
+
+/* Área A4 (cuando se imprime desde la pestaña A4) */
+.print-area {
+  background: #fff;
+  color: #000;
+}
+
+/* Ticket 80mm: ancho fijo y tipografía compacta */
+.ticket-80mm {
+  width: 80mm;              /* ancho físico del papel */
+  padding: 4mm;
+  font-size: 11px;
+  line-height: 1.25;
+  color: #000;
+  background: #fff;
+}
+.ticket-80mm .line {
+  display: flex;
+  justify-content: space-between;
+}
+.ticket-80mm .title {
+  text-align: center;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.ticket-80mm .cut {
+  margin: 6px 0;
+  border-top: 1px dashed #000;
+}
+
+/* Utilidades */
+.print-hidden { display: none; }       /* oculto por defecto, visible en @media print */
+.print-only { display: none; }         /* visible solo al imprimir */
+@media print {
+  .print-hidden { display: none !important; }
+  .print-only { display: block !important; }
 }

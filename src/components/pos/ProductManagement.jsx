@@ -1,167 +1,395 @@
+// src/components/pos/PaymentPanel.jsx
+import React, { useState, useEffect } from "react";
+import {
+  CreditCard,
+  DollarSign,
+  Receipt,
+  FileText,
+  Calculator,
+  Users,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { usePOS } from "@/contexts/POSContext";
+import DocumentPreview from "@/components/pos/DocumentPreview";
+import NumericInput from "@/components/common/NumericInput";
 
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Package, Plus, Edit3, Trash2, Upload, Download, Search, Minus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { usePOS } from '@/contexts/POSContext';
-import { toast } from '@/components/ui/use-toast';
+export default function PaymentPanel() {
+  // Tomamos dispatch si el contexto lo expone (en algunas versiones lo hace)
+  const pos = usePOS();
+  const {
+    state,
+    setPaymentMethod,
+    setPaymentAmount,
+    applyDiscount,
+    calculateTotal,
+    addCustomer,
+  } = pos;
+  const dispatch = pos?.dispatch; // puede ser undefined
 
-export default function ProductManagement() {
-  const { state, dispatch } = usePOS();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [newProduct, setNewProduct] = useState({
-    code: '',
-    name: '',
-    price: 0,
-    cost: 0,
-    stock: 0,
-    unit: 'unidad',
-    category: '',
-    providerId: '',
-    minStock: 0
+  const [isCustomerDialogOpen, setIsCustomerDialogOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [documentType, setDocumentType] = useState("sale"); // sale | remit | quote | credit
+  const [newCustomer, setNewCustomer] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
+    creditLimit: 0,
   });
 
-  const categories = [...new Set(state.products.map(p => p.category).filter(Boolean))];
-  
-  const filteredProducts = state.products.filter(product =>
-    product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    product.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    product.category?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const total = calculateTotal();
+  const change =
+    state.paymentMethod === "cash"
+      ? Math.max(0, Number(state.paymentAmount || 0) - total)
+      : 0;
 
-  const resetForm = () => {
-    setNewProduct({
-      code: '',
-      name: '',
-      price: 0,
-      cost: 0,
-      stock: 0,
-      unit: 'unidad',
-      category: '',
-      providerId: '',
-      minStock: 0
-    });
-    setEditingProduct(null);
-  };
-
-  const handleSaveProduct = () => {
-    if (!newProduct.name.trim() || !newProduct.code.trim()) {
-      toast({ title: "Error", description: "Nombre y código son requeridos", variant: "destructive" });
-      return;
+  // Si el método es transferencia, igualo el monto pagado al total automáticamente
+  useEffect(() => {
+    if (state.paymentMethod === "transfer") {
+      setPaymentAmount(total);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.paymentMethod, total]);
 
-    if (editingProduct) {
-      dispatch({ type: 'UPDATE_PRODUCT', payload: { id: editingProduct.id, updates: newProduct } });
-      toast({ title: "Producto actualizado", description: `${newProduct.name} ha sido actualizado` });
-    } else {
-      dispatch({ type: 'ADD_PRODUCT', payload: newProduct });
-      toast({ title: "Producto agregado", description: `${newProduct.name} ha sido agregado` });
+  const handlePaymentMethodChange = (method) => {
+    setPaymentMethod(method);
+    if (method === "transfer") {
+      setPaymentAmount(total);
+    } else if (method === "cash") {
+      // en efectivo reiniciamos para tipear manualmente (sin forzar 0 en el input)
+      setPaymentAmount(null);
+    } else if (method === "mixed") {
+      // en mixto iniciamos vacío para que el usuario indique la parte en efectivo
+      setPaymentAmount(null);
     }
-
-    setIsAddDialogOpen(false);
-    resetForm();
   };
 
-  const handleEditProduct = (product) => {
-    setNewProduct(product);
-    setEditingProduct(product);
-    setIsAddDialogOpen(true);
+  const setCustomerSafe = (customer) => {
+    try {
+      if (typeof dispatch === "function") {
+        dispatch({ type: "SET_CUSTOMER", payload: customer });
+      }
+    } catch (_) {}
   };
 
-  const handleDeleteProduct = (productId) => {
-    dispatch({ type: 'DELETE_PRODUCT', payload: productId });
-    toast({ title: "Producto eliminado", description: "El producto ha sido eliminado" });
+  const handleAddNewCustomer = () => {
+    const created = addCustomer(newCustomer);
+    if (created) {
+      setCustomerSafe(created);
+      setIsCustomerDialogOpen(false);
+      setNewCustomer({
+        name: "",
+        phone: "",
+        email: "",
+        address: "",
+        creditLimit: 0,
+      });
+    }
   };
 
-  const exportProducts = () => {
-    const dataStr = JSON.stringify(state.products, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'productos.json';
-    link.click();
-    URL.revokeObjectURL(url);
-    toast({ title: "Productos exportados" });
+  const handleFinalize = (type) => {
+    setDocumentType(type);
+    setIsPreviewOpen(true);
   };
 
-  const importProducts = () => {
-    toast({ title: "🚧 Esta funcionalidad no está implementada" });
-  };
-
-  const adjustStock = (productId, adjustment) => {
-    const product = state.products.find(p => p.id === productId);
-    if (!product) return;
-    const newStock = Math.max(0, product.stock + adjustment);
-    dispatch({ type: 'UPDATE_PRODUCT', payload: { id: productId, updates: { stock: newStock } } });
-    toast({ title: "Stock ajustado", description: `${product.name}: ${product.stock} → ${newStock}` });
-  };
+  if (state.cart.length === 0) {
+    return (
+      <div className="card-glass p-6 rounded-lg text-center py-16">
+        <Calculator className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
+        <p className="text-muted-foreground text-lg">
+          Agregá productos para pagar
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Gestión de Productos</h1>
-        <div className="flex space-x-2">
-          <Button onClick={importProducts} variant="outline"><Upload className="h-4 w-4 mr-2" />Importar</Button>
-          <Button onClick={exportProducts} variant="outline"><Download className="h-4 w-4 mr-2" />Exportar</Button>
-          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-            <DialogTrigger asChild><Button onClick={resetForm}><Plus className="h-4 w-4 mr-2" />Nuevo Producto</Button></DialogTrigger>
-            <DialogContent className="card-glass border-border max-w-2xl">
-              <DialogHeader><DialogTitle>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</DialogTitle></DialogHeader>
-              <div className="grid grid-cols-2 gap-4">
-                <div><Label htmlFor="code">Código *</Label><Input id="code" value={newProduct.code} onChange={(e) => setNewProduct({ ...newProduct, code: e.target.value })} /></div>
-                <div><Label htmlFor="name">Nombre *</Label><Input id="name" value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} /></div>
-                <div><Label htmlFor="price">Precio</Label><Input id="price" type="number" step="0.01" min="0" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) || 0 })} /></div>
-                <div><Label htmlFor="cost">Costo</Label><Input id="cost" type="number" step="0.01" min="0" value={newProduct.cost} onChange={(e) => setNewProduct({ ...newProduct, cost: parseFloat(e.target.value) || 0 })} /></div>
-                <div><Label htmlFor="stock">Stock</Label><Input id="stock" type="number" min="0" value={newProduct.stock} onChange={(e) => setNewProduct({ ...newProduct, stock: parseFloat(e.target.value) || 0 })} /></div>
-                <div><Label htmlFor="unit">Unidad</Label><Select value={newProduct.unit} onValueChange={(value) => setNewProduct({ ...newProduct, unit: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unidad">Unidad</SelectItem><SelectItem value="kg">Kilogramo</SelectItem><SelectItem value="metro">Metro</SelectItem><SelectItem value="litro">Litro</SelectItem></SelectContent></Select></div>
-                <div><Label htmlFor="category">Categoría</Label><Input id="category" value={newProduct.category} onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })} list="categories" /><datalist id="categories">{categories.map(cat => (<option key={cat} value={cat} />))}</datalist></div>
-                <div><Label htmlFor="providerId">Proveedor</Label><Select value={newProduct.providerId} onValueChange={(value) => setNewProduct({ ...newProduct, providerId: value })}><SelectTrigger><SelectValue placeholder="Seleccionar..."/></SelectTrigger><SelectContent>{state.providers.map(p => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}</SelectContent></Select></div>
-                <div><Label htmlFor="minStock">Stock mínimo</Label><Input id="minStock" type="number" min="0" value={newProduct.minStock} onChange={(e) => setNewProduct({ ...newProduct, minStock: parseFloat(e.target.value) || 0 })} /></div>
-              </div>
-              <div className="flex space-x-2 mt-4"><Button onClick={handleSaveProduct} className="flex-1">{editingProduct ? 'Actualizar' : 'Agregar'}</Button><Button variant="outline" onClick={() => { setIsAddDialogOpen(false); resetForm(); }}>Cancelar</Button></div>
-            </DialogContent>
-          </Dialog>
+    <>
+      <div className="card-glass p-6 rounded-lg space-y-6 text-base">
+        <h2 className="text-xl font-semibold">Finalizar Venta</h2>
+
+        {/* Cliente */}
+        <div className="space-y-2">
+          <Label>Cliente (opcional)</Label>
+          <div className="flex space-x-2">
+            <Select
+              onValueChange={(val) => {
+                const customer = state.customers.find((c) => c.id === val);
+                setCustomerSafe(customer);
+              }}
+              value={state.currentCustomer?.id || ""}
+            >
+              <SelectTrigger className="flex-1 h-12 text-base">
+                <SelectValue placeholder="Seleccionar cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                {state.customers.map((customer) => (
+                  <SelectItem
+                    key={customer.id}
+                    value={customer.id}
+                    className="text-base"
+                  >
+                    {customer.name}
+                    {customer.balance < 0 && (
+                      <span className="text-red-500 ml-2">
+                        (Debe: ${Math.abs(customer.balance).toFixed(2)})
+                      </span>
+                    )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Dialog
+              open={isCustomerDialogOpen}
+              onOpenChange={setIsCustomerDialogOpen}
+            >
+              <DialogTrigger asChild>
+                <Button variant="outline" className="h-12 w-12">
+                  <Users />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="card-glass border-border">
+                <DialogHeader>
+                  <DialogTitle>Nuevo Cliente</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="customerName">Nombre *</Label>
+                    <Input
+                      id="customerName"
+                      value={newCustomer.name}
+                      onChange={(e) =>
+                        setNewCustomer({
+                          ...newCustomer,
+                          name: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="customerPhone">Teléfono *</Label>
+                    <Input
+                      id="customerPhone"
+                      value={newCustomer.phone}
+                      onChange={(e) =>
+                        setNewCustomer({
+                          ...newCustomer,
+                          phone: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="customerEmail">Email</Label>
+                    <Input
+                      id="customerEmail"
+                      type="email"
+                      value={newCustomer.email}
+                      onChange={(e) =>
+                        setNewCustomer({
+                          ...newCustomer,
+                          email: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="customerAddress">Dirección</Label>
+                    <Input
+                      id="customerAddress"
+                      value={newCustomer.address}
+                      onChange={(e) =>
+                        setNewCustomer({
+                          ...newCustomer,
+                          address: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="creditLimit">Límite de crédito</Label>
+                    <NumericInput
+                      id="creditLimit"
+                      allowDecimal={false}
+                      value={newCustomer.creditLimit}
+                      onChange={(v) =>
+                        setNewCustomer({
+                          ...newCustomer,
+                          creditLimit: typeof v === "number" ? v : 0,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button onClick={handleAddNewCustomer} className="flex-1">
+                      Agregar Cliente
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsCustomerDialogOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
+
+        {/* Método de pago */}
+        <div className="space-y-2">
+          <Label>Método de pago</Label>
+          <div className="grid grid-cols-3 gap-2">
+            <Button
+              size="lg"
+              variant={state.paymentMethod === "cash" ? "default" : "outline"}
+              onClick={() => handlePaymentMethodChange("cash")}
+              className="h-14 text-base"
+            >
+              <DollarSign className="h-5 w-5 mr-2" />
+              Efectivo
+            </Button>
+            <Button
+              size="lg"
+              variant={
+                state.paymentMethod === "transfer" ? "default" : "outline"
+              }
+              onClick={() => handlePaymentMethodChange("transfer")}
+              className="h-14 text-base"
+            >
+              <CreditCard className="h-5 w-5 mr-2" />
+              Transf.
+            </Button>
+            <Button
+              size="lg"
+              variant={state.paymentMethod === "mixed" ? "default" : "outline"}
+              onClick={() => handlePaymentMethodChange("mixed")}
+              className="h-14 text-base"
+            >
+              Mixto
+            </Button>
+          </div>
+        </div>
+
+        {/* Monto en efectivo (si aplica) */}
+        {state.paymentMethod !== "transfer" && (
+          <div className="space-y-2">
+            <Label htmlFor="paymentAmount">
+              Monto {state.paymentMethod === "cash" ? "recibido" : "en efectivo"}
+            </Label>
+            <NumericInput
+              id="paymentAmount"
+              value={state.paymentAmount}
+              onChange={(v) => setPaymentAmount(typeof v === "number" ? v : 0)}
+              className="h-12 text-lg"
+            />
+            {state.paymentMethod === "cash" && change > 0 && (
+              <div className="text-green-600 font-semibold text-lg">
+                Vuelto: ${change.toFixed(2)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Descuento global */}
+        <div className="space-y-2">
+          <Label htmlFor="discount">Descuento Global ($)</Label>
+          <NumericInput
+            id="discount"
+            value={state.discount}
+            onChange={(v) => applyDiscount(typeof v === "number" ? v : 0)}
+            className="h-12 text-lg"
+          />
+        </div>
+
+        {/* Total */}
+        <div className="bg-primary/10 p-4 rounded-lg text-center">
+          <p className="text-muted-foreground">Total a pagar</p>
+          <p className="text-4xl font-bold">${total.toFixed(2)}</p>
+        </div>
+
+        {/* Acciones */}
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            id="btn-invoice"
+            size="lg"
+            onClick={() => handleFinalize("sale")}
+            disabled={!state.cashRegister.isOpen}
+            className="h-16 text-lg bg-green-600 hover:bg-green-700 disabled:opacity-50"
+          >
+            <Receipt className="h-5 w-5 mr-2" />
+            Factura (F10)
+          </Button>
+
+          <Button
+            id="btn-remit"
+            size="lg"
+            onClick={() => handleFinalize("remit")}
+            variant="outline"
+            className="h-16 text-lg"
+          >
+            <FileText className="h-5 w-5 mr-2" />
+            Remito (F9)
+          </Button>
+
+          <Button
+            id="btn-quote"
+            size="lg"
+            onClick={() => handleFinalize("quote")}
+            variant="outline"
+            className="h-16 text-lg col-span-2 border-yellow-500 text-yellow-500 hover:bg-yellow-500/10 hover:text-yellow-500"
+          >
+            <Calculator className="h-5 w-5 mr-2" />
+            Presupuesto (F8)
+          </Button>
+
+          <Button
+            onClick={() => handleFinalize("credit")}
+            variant="outline"
+            size="lg"
+            disabled={!state.currentCustomer}
+            className="h-16 text-lg col-span-2 border-purple-500 text-purple-500 hover:bg-purple-500/10 hover:text-purple-500 disabled:opacity-50"
+          >
+            <Users className="h-5 w-5 mr-2" />
+            A Cuenta
+          </Button>
+        </div>
+
+        {!state.cashRegister.isOpen && (
+          <div className="text-center text-red-500 text-sm mt-2">
+            La caja debe estar abierta para procesar ventas.
+          </div>
+        )}
       </div>
 
-      <div className="card-glass p-4 rounded-lg"><div className="flex items-center space-x-4"><Search className="h-5 w-5 text-primary" /><Input placeholder="Buscar productos..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="flex-1" /></div></div>
-
-      <div className="card-glass p-6 rounded-lg"><div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead><tr className="border-b border-border"><th className="text-left text-muted-foreground p-2">Código</th><th className="text-left text-muted-foreground p-2">Nombre</th><th className="text-left text-muted-foreground p-2">Proveedor</th><th className="text-right text-muted-foreground p-2">Precio</th><th className="text-right text-muted-foreground p-2">Stock</th><th className="text-right text-muted-foreground p-2">Margen</th><th className="text-center text-muted-foreground p-2">Acciones</th></tr></thead>
-          <tbody>
-            {filteredProducts.map((product, index) => {
-              const margin = product.price > 0 ? ((product.price - product.cost) / product.price * 100) : 0;
-              const stockColor = product.stock <= product.minStock ? (product.stock === 0 ? 'text-red-500' : 'text-yellow-500') : 'text-green-500';
-              const provider = state.providers.find(p => p.id === product.providerId);
-              return (
-                <motion.tr key={product.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} className="border-b border-border/50 hover:bg-accent">
-                  <td className="p-3 text-muted-foreground">{product.code}</td>
-                  <td className="p-3 font-medium">{product.name}</td>
-                  <td className="p-3 text-muted-foreground">{provider?.name || 'N/A'}</td>
-                  <td className="p-3 text-right">${product.price.toFixed(2)}</td>
-                  <td className={`p-3 text-right font-medium ${stockColor}`}>{product.stock} {product.unit}</td>
-                  <td className="p-3 text-right text-green-500">{margin.toFixed(1)}%</td>
-                  <td className="p-3"><div className="flex items-center justify-center space-x-1">
-                    <Button size="icon" variant="ghost" onClick={() => adjustStock(product.id, -1)} className="h-8 w-8 text-red-500"><Minus size={16} /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => adjustStock(product.id, 1)} className="h-8 w-8 text-green-500"><Plus size={16} /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => handleEditProduct(product)} className="h-8 w-8 text-primary"><Edit3 size={16} /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => handleDeleteProduct(product.id)} className="h-8 w-8 text-red-500"><Trash2 size={16} /></Button>
-                  </div></td>
-                </motion.tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {filteredProducts.length === 0 && <div className="text-center py-8"><Package className="h-12 w-12 text-muted-foreground/50 mx-auto mb-2" /><p className="text-muted-foreground">No se encontraron productos</p></div>}
-      </div></div>
-    </div>
+      {/* Preview: confirma y emite (DocumentPreview se encarga de llamar a processSale) */}
+      <DocumentPreview
+        isOpen={isPreviewOpen}
+        onOpenChange={setIsPreviewOpen}
+        documentType={documentType}
+        onConfirm={() => {
+          // No llamamos a processSale acá para evitar doble emisión.
+          setIsPreviewOpen(false);
+        }}
+      />
+    </>
   );
 }
