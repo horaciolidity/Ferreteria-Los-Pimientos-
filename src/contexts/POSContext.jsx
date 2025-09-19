@@ -271,27 +271,15 @@ function posReducer(state, action) {
         const change = Number(sale.payment?.change || 0);
 
         if (method === 'cash') {
-          if (total > 0) {
-            cashRegister.currentAmount += total;
-            cashRegister.movements.push({
-              id: cryptoRandom(), type: 'income', concept: `Venta ${sale.documentNumber}`, amount: total, timestamp: new Date().toISOString(),
-            });
-          }
-          if (change > 0) {
-            cashRegister.currentAmount -= change;
-            cashRegister.movements.push({
-              id: cryptoRandom(), type: 'expense', concept: `Vuelto ${sale.documentNumber}`, amount: change, timestamp: new Date().toISOString(),
-            });
-          }
+          // Ajustar SOLO el efectivo real en caja (sin crear movimientos por venta/vuelto)
+          if (total > 0) cashRegister.currentAmount += total;
+          if (change > 0) cashRegister.currentAmount -= change;
         } else if (method === 'mixed') {
           // Parte efectivamente recibida en EFECTIVO
           const cashPart = Math.min(paid, total);
           if (cashPart > 0) {
             cashRegister.currentAmount += cashPart;
             cashRegister.cashFromMixed = Number(cashRegister.cashFromMixed || 0) + cashPart;
-            cashRegister.movements.push({
-              id: cryptoRandom(), type: 'income', concept: `Venta (mixto) ${sale.documentNumber}`, amount: cashPart, timestamp: new Date().toISOString(),
-            });
           }
         }
 
