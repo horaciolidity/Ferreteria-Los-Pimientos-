@@ -1,5 +1,5 @@
 // src/components/pos/ProductManagement.jsx
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Package, Plus, Edit3, Trash2, Upload, Download, Search, Minus, FileDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,8 @@ export default function ProductManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const fileInputRef = useRef(null);
+
   const [newProduct, setNewProduct] = useState({
     code: '',
     name: '',
@@ -92,6 +94,139 @@ export default function ProductManagement() {
     if (window.confirm(`¿Eliminar el producto "${prod.name}"?`)) {
       dispatch({ type: 'DELETE_PRODUCT', payload: productId });
       toast({ title: "Producto eliminado", description: `"${prod.name}" ha sido eliminado` });
+    }
+  };
+
+  /* ---------------- Importar lista TXT/CSV ---------------- */
+  const importProductsClick = () => fileInputRef.current?.click();
+
+  const normalizeKey = (s='') =>
+    s.toString()
+     .toLowerCase()
+     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')  // quita acentos
+     .replace(/\s+/g,'')
+     .replace(/[^a-z0-9_]/g,'');
+
+  const parseNumber = (v) => {
+    if (v == null) return null;
+    const str = String(v).trim();
+    if (!str) return null;
+    // soporte "1.234,56" y "1,234.56"
+    const hasComma = str.includes(',');
+    const hasDot   = str.includes('.');
+    let clean = str.replace(/\s/g,'');
+    if (hasComma && hasDot) {
+      // asume coma decimal si última coma está después del último punto
+      const lastComma = clean.lastIndexOf(',');
+      const lastDot   = clean.lastIndexOf('.');
+      if (lastComma > lastDot) clean = clean.replace(/\./g,'').replace(',', '.');
+      else clean = clean.replace(/,/g,'');
+    } else if (hasComma && !hasDot) {
+      clean = clean.replace(',', '.');
+    }
+    const n = Number(clean);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const detectSep = (text) => {
+    const first = (text.split(/\r?\n/)[0] || '');
+    if (first.includes('\t')) return '\t';
+    if (first.includes(';'))  return ';';
+    return ','; // default CSV
+  };
+
+  const importFromFile = async (file) => {
+    if (!file) return;
+    try {
+      const content = await file.text();
+      const sep = detectSep(content);
+      const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0);
+      if (lines.length < 2) {
+        toast({ title: 'Archivo vacío', variant: 'destructive' });
+        return;
+      }
+
+      // cabecera
+      const header = lines[0].split(sep).map(h => normalizeKey(h));
+      const idx = (names) => {
+        const targets = Array.isArray(names) ? names : [names];
+        for (const t of targets.map(normalizeKey)) {
+          const i = header.indexOf(t);
+          if (i !== -1) return i;
+        }
+        return -1;
+      };
+
+      const iCode  = idx(['code','codigo','código']);
+      const iName  = idx(['name','nombre']);
+      const iPrice = idx(['price','precio']);
+      const iCost  = idx(['cost','costo']);
+      const iStock = idx(['stock']);
+      const iMin   = idx(['minstock','stockminimo','stockmin']);
+
+      if (iCode === -1 && iName === -1) {
+        toast({ title: 'Cabecera inválida', description: 'Debe existir "code/código" o "name/nombre".', variant: 'destructive' });
+        return;
+      }
+
+      let found = 0, updated = 0, notFound = 0;
+      const updates = [];
+
+      // Mapas para búsquedas rápidas
+      const byCode  = new Map(state.products.map(p => [String(p.code ?? '').toLowerCase(), p]));
+      const byName  = new Map(state.products.map(p => [String(p.name ?? '').toLowerCase(), p]));
+
+      for (let li = 1; li < lines.length; li++) {
+        const cols = lines[li].split(sep);
+        const code = iCode >= 0 ? String(cols[iCode] ?? '').trim() : '';
+        const name = iName >= 0 ? String(cols[iName] ?? '').trim() : '';
+
+        let prod = null;
+        if (code) prod = byCode.get(code.toLowerCase());
+        if (!prod && name) prod = byName.get(name.toLowerCase());
+
+        if (!prod) { notFound++; continue; }
+        found++;
+
+        const upd = {};
+        if (iPrice >= 0) {
+          const n = parseNumber(cols[iPrice]);
+          if (n != null) upd.price = n;
+        }
+        if (iCost >= 0) {
+          const n = parseNumber(cols[iCost]);
+          if (n != null) upd.cost = n;
+        }
+        if (iStock >= 0) {
+          const n = parseNumber(cols[iStock]);
+          if (n != null) upd.stock = Math.max(0, Math.trunc(n));
+        }
+        if (iMin >= 0) {
+          const n = parseNumber(cols[iMin]);
+          if (n != null) upd.minStock = Math.max(0, Math.trunc(n));
+        }
+
+        if (Object.keys(upd).length > 0) {
+          updates.push({ id: prod.id, updates: upd, name: prod.name });
+          updated++;
+        }
+      }
+
+      const msg = `Productos en archivo: ${lines.length - 1}
+Encontrados: ${found}
+Con cambios: ${updated}
+No encontrados: ${notFound}
+
+¿Aplicar cambios?`;
+      if (!window.confirm(msg)) return;
+
+      updates.forEach(u => dispatch({ type: 'UPDATE_PRODUCT', payload: { id: u.id, updates: u.updates } }));
+      toast({ title: 'Importación completada', description: `Actualizados: ${updated} / No encontrados: ${notFound}` });
+    } catch (e) {
+      console.error(e);
+      toast({ title: 'Error al importar', description: String(e?.message || e), variant: 'destructive' });
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -202,10 +337,6 @@ export default function ProductManagement() {
     toast({ title: "Excel generado", description: "Se descargó el archivo .xls." });
   };
 
-  const importProducts = () => {
-    toast({ title: "🚧 Importar", description: "Aún no implementado (si querés, lo hago leyendo CSV/TXT)." });
-  };
-
   const adjustStock = (productId, adjustment) => {
     const product = state.products.find(p => p.id === productId);
     if (!product) return;
@@ -220,9 +351,19 @@ export default function ProductManagement() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Gestión de Productos</h1>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={importProducts} variant="outline">
+          {/* IMPORTAR */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.csv,text/plain,text/csv"
+            className="hidden"
+            onChange={(e) => importFromFile(e.target.files?.[0])}
+          />
+          <Button onClick={importProductsClick} variant="outline" title="Importar TXT/CSV con cabecera">
             <Upload className="h-4 w-4 mr-2" />Importar
           </Button>
+
+          {/* EXPORTS */}
           <Button onClick={exportXLS} variant="outline" title="Exportar a Excel (.xls)">
             <FileDown className="h-4 w-4 mr-2" />XLS
           </Button>
@@ -233,6 +374,7 @@ export default function ProductManagement() {
             <Download className="h-4 w-4 mr-2" />CSV
           </Button>
 
+          {/* NUEVO / EDITAR */}
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={resetForm}><Plus className="h-4 w-4 mr-2" />Nuevo Producto</Button>
