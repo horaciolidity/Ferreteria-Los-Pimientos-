@@ -63,7 +63,7 @@ const initialState = {
 
   currentCustomer: null,
   paymentMethod: 'cash', // 'cash'|'card'|'transfer'|'mixed'|'credit'|'account'
-  paymentAmount: 0,      // para cash/mixed
+  paymentAmount: '',     // string vacío -> no aparece "0" en el input
   discount: 0,
   notes: '',
 };
@@ -124,12 +124,16 @@ function posReducer(state, action) {
     case 'REMOVE_FROM_CART':
       return { ...state, cart: state.cart.filter(i => i.cartId !== action.payload) };
     case 'CLEAR_CART':
-      return { ...state, cart: [], currentCustomer: null, paymentMethod: 'cash', paymentAmount: 0, discount: 0, notes: '' };
+      return { ...state, cart: [], currentCustomer: null, paymentMethod: 'cash', paymentAmount: '', discount: 0, notes: '' };
 
     /* ------ Maestro ------ */
-    case 'SET_CUSTOMER':       return { ...state, currentCustomer: action.payload };
+    case 'SET_CUSTOMER':       return { ...state, currentCustomer: action.payload || null };
     case 'SET_PAYMENT_METHOD': return { ...state, paymentMethod: action.payload };
-    case 'SET_PAYMENT_AMOUNT': return { ...state, paymentAmount: Number(action.payload || 0) };
+    case 'SET_PAYMENT_AMOUNT': {
+      // permitimos string vacío para que el input no muestre "0"
+      const v = action.payload;
+      return { ...state, paymentAmount: v === '' ? '' : Number(v || 0) };
+    }
     case 'SET_DISCOUNT':       return { ...state, discount: Number(action.payload || 0) };
     case 'SET_NOTES':          return { ...state, notes: action.payload || '' };
 
@@ -238,7 +242,6 @@ function posReducer(state, action) {
         const paid  = Number(sale.payment?.amountPaid || 0);
         const change = Number(sale.payment?.change || 0);
 
-        // Entradas de efectivo si corresponde
         if (method === 'cash') {
           if (total > 0) {
             cashRegister.currentAmount += total;
@@ -253,7 +256,6 @@ function posReducer(state, action) {
             });
           }
         } else if (method === 'mixed') {
-          // En mixed tomamos paymentAmount como efectivo aportado
           const cashPart = Math.min(paid, total);
           if (cashPart > 0) {
             cashRegister.currentAmount += cashPart;
@@ -263,7 +265,6 @@ function posReducer(state, action) {
           }
         }
 
-        // Acumular por tipo
         cashRegister.salesByType[method] = Number(cashRegister.salesByType[method] || 0) + total;
       }
 
@@ -309,7 +310,7 @@ function posReducer(state, action) {
         cart: [],
         currentCustomer: null,
         paymentMethod: 'cash',
-        paymentAmount: 0,
+        paymentAmount: '',
         discount: 0,
         notes: '',
       };
@@ -317,7 +318,6 @@ function posReducer(state, action) {
 
     // Compatibilidad con tu código anterior que dispatch-eaba PROCESS_SALE
     case 'PROCESS_SALE': {
-      // Mantengo compat: deriva a SAVE_SALE esperando el payload de antes
       const p = action.payload;
       const sale = {
         id: Date.now().toString(),
@@ -335,9 +335,9 @@ function posReducer(state, action) {
           amountPaid: Number(p.paymentAmount || 0),
           change: Number(p.change || 0),
         },
-        paymentMethod: p.paymentMethod || 'cash', // legacy
-        paymentAmount: Number(p.paymentAmount || 0), // legacy
-        change: Number(p.change || 0),               // legacy
+        paymentMethod: p.paymentMethod || 'cash',
+        paymentAmount: Number(p.paymentAmount || 0),
+        change: Number(p.change || 0),
         notes: p.notes || '',
         customer: p.customer || null,
         documentNumber: p.document?.number || `TEMP-${Date.now()}`,
@@ -435,6 +435,16 @@ export function POSProvider({ children }) {
     }
   }, []);
 
+  // Bridge para permitir setear el cliente desde componentes legacy
+  useEffect(() => {
+    const handler = (ev) => {
+      const customer = ev?.detail || null;
+      dispatch({ type: 'SET_CUSTOMER', payload: customer });
+    };
+    window.addEventListener('pos:set-customer', handler);
+    return () => window.removeEventListener('pos:set-customer', handler);
+  }, []);
+
   // Persistencia + BroadcastChannel
   useEffect(() => {
     const toSave = { ...state, cart: undefined }; // no persistimos carrito si no querés
@@ -485,6 +495,13 @@ export function POSProvider({ children }) {
   const setPaymentAmount = (v) => dispatch({ type: 'SET_PAYMENT_AMOUNT', payload: v });
   const applyDiscount = (v) => dispatch({ type: 'SET_DISCOUNT', payload: v });
 
+  // Helpers para cliente (nuevo)
+  const setCustomer = (customer) => dispatch({ type: 'SET_CUSTOMER', payload: customer || null });
+  const setCustomerById = (id) => {
+    const customer = state.customers.find(c => c.id === id) || null;
+    dispatch({ type: 'SET_CUSTOMER', payload: customer });
+  };
+
   const calculateDetail = () => calcDetail(state.cart, state.discount, state.settings.taxRate);
   const calculateTotal = () => calculateDetail().total;
   const calculateProfit = () => calcProfit(state.cart);
@@ -500,10 +517,10 @@ export function POSProvider({ children }) {
 
     // Validaciones
     if (type !== 'quote' && type !== 'credit') {
-      if (state.paymentMethod === 'cash' && Number(state.paymentAmount) < total) {
+      if (state.paymentMethod === 'cash' && Number(state.paymentAmount || 0) < total) {
         toast({
           title: 'Pago insuficiente',
-          description: `Total: $${total.toFixed(2)} / Pagado: $${Number(state.paymentAmount).toFixed(2)}`,
+          description: `Total: $${total.toFixed(2)} / Pagado: $${Number(state.paymentAmount || 0).toFixed(2)}`,
           variant: 'destructive',
         });
         return null;
@@ -536,12 +553,12 @@ export function POSProvider({ children }) {
       payment: {
         method: state.paymentMethod,
         amountPaid: Number(state.paymentAmount || 0),
-        change: state.paymentMethod === 'cash' ? Number(Math.max(0, (state.paymentAmount || 0) - total).toFixed(2)) : 0,
+        change: state.paymentMethod === 'cash' ? Number(Math.max(0, (Number(state.paymentAmount || 0) - total)).toFixed(2)) : 0,
       },
       // compat legacy
       paymentMethod: state.paymentMethod,
       paymentAmount: Number(state.paymentAmount || 0),
-      change: state.paymentMethod === 'cash' ? Number(Math.max(0, (state.paymentAmount || 0) - total).toFixed(2)) : 0,
+      change: state.paymentMethod === 'cash' ? Number(Math.max(0, (Number(state.paymentAmount || 0) - total)).toFixed(2)) : 0,
 
       customer: state.currentCustomer,
       notes: state.notes || '',
@@ -611,6 +628,8 @@ export function POSProvider({ children }) {
     setPaymentMethod,
     setPaymentAmount,
     applyDiscount,
+    setCustomer,
+    setCustomerById,
     calculateSubtotal: () => calcSubtotal(state.cart),
     calculateTax: () => Number(calcSubtotal(state.cart) * Number(state.settings.taxRate || 0)),
     calculateTotal,

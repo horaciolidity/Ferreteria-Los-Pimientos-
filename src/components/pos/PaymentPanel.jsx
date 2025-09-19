@@ -1,4 +1,3 @@
-// src/components/pos/PaymentPanel.jsx
 import React, { useState, useEffect } from 'react';
 import { CreditCard, DollarSign, Receipt, FileText, Calculator, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,11 +16,14 @@ export default function PaymentPanel() {
     applyDiscount,
     calculateTotal,
     addCustomer,
+    setCustomerById,   // helper del contexto
+    setCustomer,       // opcional
   } = usePOS();
 
   const [isCustomerDialogOpen, setIsCustomerDialogOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [documentType, setDocumentType] = useState('sale'); // sale | remit | quote | credit
+  const [documentType, setDocumentType] = useState('sale');
+
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     phone: '',
@@ -31,66 +33,27 @@ export default function PaymentPanel() {
   });
 
   const total = calculateTotal();
-  const change = state.paymentMethod === 'cash'
-    ? Math.max(0, Number(state.paymentAmount || 0) - total)
-    : 0;
+  const paid = Number(state.paymentAmount || 0);
+  const change = state.paymentMethod === 'cash' ? Math.max(0, paid - total) : 0;
 
-  // Si el método es transferencia, igualo el monto pagado al total automáticamente
   useEffect(() => {
     if (state.paymentMethod === 'transfer') {
-      setPaymentAmount(total);
+      setPaymentAmount(total); // autollenar
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.paymentMethod, total]);
 
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method);
-    if (method === 'transfer') {
-      setPaymentAmount(total);
-    } else if (method === 'cash') {
-      // en efectivo reiniciamos para tipear manualmente
-      setPaymentAmount(0);
-    }
-  };
-
-  const handleCustomerSelect = (customerId) => {
-    const customer = state.customers.find((c) => c.id === customerId);
-    // compat: mantenemos el mismo tipo de acción que tu reducer soporta
-    // pero podrías usar un helper setCustomer si lo expusieras desde el contexto
-    // dispatch({ type: 'SET_CUSTOMER', payload: customer });
-    // usando API expuesta en versiones más nuevas:
-    // setCustomer(customer)
-    // Como no está expuesto en este panel, usamos dispatch legacy:
-    // Nota: este import no está acá, pero el reducer lo entiende si llega desde otros componentes.
-    // Para mantenerlo simple, usamos un pequeño puente:
-    window?.dispatchEvent(new CustomEvent('pos:set-customer', { detail: customer }));
-    // fallback directo:
-    try {
-      // si el contexto expone dispatch en tu versión
-      // eslint-disable-next-line no-undef
-      if (typeof dispatch === 'function') dispatch({ type: 'SET_CUSTOMER', payload: customer });
-    } catch (_) {}
-  };
-
-  // Como arriba intentamos mantener compat con distintas variantes de tu contexto,
-  // proveemos una forma segura para setear el cliente si existe dispatch en el contexto.
-  // Si tu POSContext ya expone setCustomer, reemplazá por: setCustomer(customer)
-  // Para evitar sorpresas, lo reimplementamos inline:
-  const setCustomerSafe = (customer) => {
-    try {
-      // eslint-disable-next-line no-undef
-      if (typeof dispatch === 'function') {
-        dispatch({ type: 'SET_CUSTOMER', payload: customer });
-      } else {
-        // nada: DocumentPreview y POSContext manejarán el estado igualmente
-      }
-    } catch (_) {}
+    if (method === 'transfer') setPaymentAmount(total);
+    if (method === 'cash' || method === 'mixed') setPaymentAmount(''); // evitar "0"
   };
 
   const handleAddNewCustomer = () => {
     const created = addCustomer(newCustomer);
     if (created) {
-      setCustomerSafe(created);
+      if (setCustomerById) setCustomerById(created.id);
+      else if (setCustomer) setCustomer(created);
       setIsCustomerDialogOpen(false);
       setNewCustomer({ name: '', phone: '', email: '', address: '', creditLimit: 0 });
     }
@@ -120,10 +83,7 @@ export default function PaymentPanel() {
           <Label>Cliente (opcional)</Label>
           <div className="flex space-x-2">
             <Select
-              onValueChange={(val) => {
-                const customer = state.customers.find((c) => c.id === val);
-                setCustomerSafe(customer);
-              }}
+              onValueChange={(id) => setCustomerById(id)}
               value={state.currentCustomer?.id || ''}
             >
               <SelectTrigger className="flex-1 h-12 text-base">
@@ -145,7 +105,7 @@ export default function PaymentPanel() {
 
             <Dialog open={isCustomerDialogOpen} onOpenChange={setIsCustomerDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" className="h-12 w-12">
+                <Button variant="outline" className="h-12 w-12" title="Nuevo cliente">
                   <Users />
                 </Button>
               </DialogTrigger>
@@ -261,7 +221,7 @@ export default function PaymentPanel() {
               step="0.01"
               min="0"
               value={state.paymentAmount}
-              onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
+              onChange={(e) => setPaymentAmount(e.target.value)} // permite '' sin forzar 0
               className="h-12 text-lg"
             />
             {state.paymentMethod === 'cash' && change > 0 && (
@@ -346,15 +306,11 @@ export default function PaymentPanel() {
         )}
       </div>
 
-      {/* Preview: confirma y emite (DocumentPreview se encarga de llamar a processSale) */}
       <DocumentPreview
         isOpen={isPreviewOpen}
         onOpenChange={setIsPreviewOpen}
         documentType={documentType}
-        onConfirm={() => {
-          // No llamamos a processSale acá para evitar doble emisión.
-          setIsPreviewOpen(false);
-        }}
+        onConfirm={() => setIsPreviewOpen(false)}
       />
     </>
   );

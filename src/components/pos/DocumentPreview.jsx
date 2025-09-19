@@ -263,8 +263,9 @@ const DocumentPreview = ({
 
   return (
     <Dialog open={!!isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
-        <DialogHeader>
+      {/* Modal más ancho y con alto máximo; los scrolls van adentro */}
+      <DialogContent className="sm:max-w-5xl w-[95vw] max-h-[90vh] p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-4">
           <DialogTitle className="flex items-center justify-between">
             {title}{" "}
             <span className="ml-2 text-sm text-muted-foreground">
@@ -276,13 +277,14 @@ const DocumentPreview = ({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col h-[70vh]">
+        {/* Contenido con scroll separado; deja footer siempre visible */}
+        <div className="px-6 pb-4 overflow-y-auto" style={{ maxHeight: "calc(90vh - 120px)" }}>
           <Tabs
             value={activeTab}
             onValueChange={setActiveTab}
             className="flex-1 flex flex-col"
           >
-            <TabsList>
+            <TabsList className="sticky top-0 bg-white/80 backdrop-blur z-10">
               <TabsTrigger value="A4">Vista A4</TabsTrigger>
               <TabsTrigger value="80mm">Ticket 80mm</TabsTrigger>
               {pdfUrl && <TabsTrigger value="PDF">PDF</TabsTrigger>}
@@ -537,7 +539,7 @@ const DocumentPreview = ({
           </Tabs>
         </div>
 
-        <DialogFooter className="flex items-center gap-2">
+        <DialogFooter className="flex items-center gap-2 px-6 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             <X className="h-4 w-4 mr-2" />
             Cerrar
@@ -551,7 +553,6 @@ const DocumentPreview = ({
           <Button
             variant="secondary"
             onClick={handleDownload}
-            // ahora SI permite descargar aunque no haya pdfUrl (genera local)
           >
             <Download className="h-4 w-4 mr-2" />
             Descargar PDF
