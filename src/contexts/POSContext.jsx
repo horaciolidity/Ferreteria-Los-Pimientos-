@@ -26,6 +26,7 @@ const initialState = {
     openedAt: null,
     closedAt: null,
     salesByType: { cash: 0, transfer: 0, mixed: 0, credit: 0, card: 0, account: 0 },
+    cashFromMixed: 0, // acumulado de efectivo de ventas "mixto"
   },
   cashClosures: [],
 
@@ -62,8 +63,8 @@ const initialState = {
   },
 
   currentCustomer: null,
-  paymentMethod: 'cash', // 'cash'|'card'|'transfer'|'mixed'|'credit'|'account'
-  paymentAmount: '',     // string vacío -> no aparece "0" en el input
+  paymentMethod: 'cash',
+  paymentAmount: '',
   discount: 0,
   notes: '',
 };
@@ -130,7 +131,6 @@ function posReducer(state, action) {
     case 'SET_CUSTOMER':       return { ...state, currentCustomer: action.payload || null };
     case 'SET_PAYMENT_METHOD': return { ...state, paymentMethod: action.payload };
     case 'SET_PAYMENT_AMOUNT': {
-      // permitimos string vacío para que el input no muestre "0"
       const v = action.payload;
       return { ...state, paymentAmount: v === '' ? '' : Number(v || 0) };
     }
@@ -172,6 +172,7 @@ function posReducer(state, action) {
           openingAmount: Number(action.payload || 0),
           currentAmount: Number(action.payload || 0),
           openedAt: new Date().toISOString(),
+          cashFromMixed: 0,
           movements: [{
             id: cryptoRandom(),
             type: 'opening',
@@ -181,6 +182,7 @@ function posReducer(state, action) {
           }],
         },
       };
+
     case 'ADD_CASH_MOVEMENT': {
       if (!state.cashRegister.isOpen) return state;
       const { type, concept, amount } = action.payload;
@@ -197,26 +199,52 @@ function posReducer(state, action) {
         },
       };
     }
+
     case 'CLOSE_CASH_REGISTER': {
-      const { openingAmount, movements, salesByType, currentAmount } = state.cashRegister;
-      const totalCashSales = Number(salesByType.cash || 0);
+      const cr = state.cashRegister;
+      const { openingAmount, movements, salesByType, currentAmount, openedAt, cashFromMixed } = cr;
+
       const cashMovements = movements.reduce((acc, m) => {
         if (m.type === 'income')  return acc + Number(m.amount || 0);
         if (m.type === 'expense') return acc - Number(m.amount || 0);
         return acc;
       }, 0);
-      const expectedAmount = Number(openingAmount || 0) + totalCashSales + cashMovements;
+
+      const expectedAmount = Number(openingAmount || 0)
+        + Number(salesByType.cash || 0)
+        + Number(cashFromMixed || 0)
+        + Number(cashMovements || 0);
+
       const difference = Number(currentAmount || 0) - expectedAmount;
+
+      // Detalle del turno (excluye presupuestos)
+      const inTurn = state.sales.filter(s => openedAt && new Date(s.timestamp) >= new Date(openedAt) && s.type !== 'quote');
+      const subtotalTurno = inTurn.reduce((s, x) => s + Number(x.subtotal || 0) - Number(x.itemDiscounts || 0) - Number(x.discount || 0), 0);
+      const ivaTurno      = inTurn.reduce((s, x) => s + Number(x.taxAmount || 0), 0);
+      const totalTurno    = inTurn.reduce((s, x) => s + Number(x.total || 0), 0);
+      const gananciaNetaTurno = inTurn.reduce((s, x) => s + Number(x.profit || 0), 0);
+      const desgloseMetodo = inTurn.reduce((acc, s) => {
+        const m = s?.payment?.method ?? s?.paymentMethod ?? 'desconocido';
+        acc[m] = (acc[m] || 0) + Number(s.total || 0);
+        return acc;
+      }, {});
+
       const closure = {
-        ...state.cashRegister,
+        ...cr,
         expectedAmount,
         difference,
         closedAt: new Date().toISOString(),
+        subtotalTurno,
+        ivaTurno,
+        totalTurno,
+        gananciaNetaTurno,
+        desgloseMetodo,
         movements: [
-          ...state.cashRegister.movements,
+          ...movements,
           { id: cryptoRandom(), type: 'closing', concept: 'Cierre', amount: Number(currentAmount || 0), timestamp: new Date().toISOString() },
         ],
       };
+
       return {
         ...state,
         cashRegister: { ...initialState.cashRegister },
@@ -256,15 +284,18 @@ function posReducer(state, action) {
             });
           }
         } else if (method === 'mixed') {
+          // Parte efectivamente recibida en EFECTIVO
           const cashPart = Math.min(paid, total);
           if (cashPart > 0) {
             cashRegister.currentAmount += cashPart;
+            cashRegister.cashFromMixed = Number(cashRegister.cashFromMixed || 0) + cashPart;
             cashRegister.movements.push({
               id: cryptoRandom(), type: 'income', concept: `Venta (mixto) ${sale.documentNumber}`, amount: cashPart, timestamp: new Date().toISOString(),
             });
           }
         }
 
+        // Total por método (registro de gestión)
         cashRegister.salesByType[method] = Number(cashRegister.salesByType[method] || 0) + total;
       }
 
@@ -316,7 +347,7 @@ function posReducer(state, action) {
       };
     }
 
-    // Compatibilidad con tu código anterior que dispatch-eaba PROCESS_SALE
+    // Compatibilidad legacy + helpers
     case 'PROCESS_SALE': {
       const p = action.payload;
       const sale = {
@@ -349,6 +380,36 @@ function posReducer(state, action) {
       return posReducer(state, { type: 'SAVE_SALE', payload: sale });
     }
 
+    case 'CLEAR_SALES_HISTORY': {
+      return {
+        ...state,
+        sales: [],
+        documents: [],
+      };
+    }
+
+    case 'CONVERT_QUOTE_TO_SALE': {
+      const q = action.payload;
+      // Convertimos el presupuesto en una venta real, método cash por defecto (pagado exacto)
+      const newSale = {
+        ...q,
+        id: cryptoRandom(),
+        timestamp: new Date().toISOString(),
+        type: 'sale',
+        payment: {
+          method: q?.payment?.method || 'cash',
+          amountPaid: q?.payment?.amountPaid ?? q?.total ?? 0,
+          change: 0,
+        },
+        paymentMethod: q?.payment?.method || 'cash',
+        paymentAmount: q?.payment?.amountPaid ?? q?.total ?? 0,
+        change: 0,
+        documentNumber: `TEMP-${Date.now()}`,
+        fiscal: { training: true, provider: 'none', cae: null, cae_due_date: null, pdf_url: null, extra: {} },
+      };
+      return posReducer(state, { type: 'SAVE_SALE', payload: newSale });
+    }
+
     default:
       return state;
   }
@@ -377,7 +438,6 @@ const calcProfit = (cart) =>
 export function POSProvider({ children }) {
   const [state, dispatch] = useReducer(posReducer, initialState);
 
-  // Carga desde storage con merge y seeds
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -435,7 +495,6 @@ export function POSProvider({ children }) {
     }
   }, []);
 
-  // Bridge para permitir setear el cliente desde componentes legacy
   useEffect(() => {
     const handler = (ev) => {
       const customer = ev?.detail || null;
@@ -445,9 +504,8 @@ export function POSProvider({ children }) {
     return () => window.removeEventListener('pos:set-customer', handler);
   }, []);
 
-  // Persistencia + BroadcastChannel
   useEffect(() => {
-    const toSave = { ...state, cart: undefined }; // no persistimos carrito si no querés
+    const toSave = { ...state, cart: undefined };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
 
     const channel = new BroadcastChannel('ferrePOS');
@@ -495,7 +553,6 @@ export function POSProvider({ children }) {
   const setPaymentAmount = (v) => dispatch({ type: 'SET_PAYMENT_AMOUNT', payload: v });
   const applyDiscount = (v) => dispatch({ type: 'SET_DISCOUNT', payload: v });
 
-  // Helpers para cliente (nuevo)
   const setCustomer = (customer) => dispatch({ type: 'SET_CUSTOMER', payload: customer || null });
   const setCustomerById = (id) => {
     const customer = state.customers.find(c => c.id === id) || null;
@@ -506,7 +563,6 @@ export function POSProvider({ children }) {
   const calculateTotal = () => calculateDetail().total;
   const calculateProfit = () => calcProfit(state.cart);
 
-  // Proceso principal (híbrido AFIP/ARCA)
   const processSale = async (type = 'sale') => {
     if (!state.cart.length) {
       toast({ title: 'Error', description: 'El carrito está vacío', variant: 'destructive' });
@@ -515,7 +571,6 @@ export function POSProvider({ children }) {
     const { subtotal, itemDiscounts, taxAmount, total } = calculateDetail();
     const profit = calculateProfit();
 
-    // Validaciones
     if (type !== 'quote' && type !== 'credit') {
       if (state.paymentMethod === 'cash' && Number(state.paymentAmount || 0) < total) {
         toast({
@@ -531,11 +586,10 @@ export function POSProvider({ children }) {
       return null;
     }
 
-    // Construyo base de venta
     const sale = {
       id: cryptoRandom(),
       timestamp: new Date().toISOString(),
-      type, // 'sale' | 'remit' | 'quote' | 'credit'
+      type,
       items: state.cart.map(it => ({
         id: it.id, code: it.code, name: it.name,
         quantity: Number(it.quantity || 0),
@@ -555,7 +609,6 @@ export function POSProvider({ children }) {
         amountPaid: Number(state.paymentAmount || 0),
         change: state.paymentMethod === 'cash' ? Number(Math.max(0, (Number(state.paymentAmount || 0) - total)).toFixed(2)) : 0,
       },
-      // compat legacy
       paymentMethod: state.paymentMethod,
       paymentAmount: Number(state.paymentAmount || 0),
       change: state.paymentMethod === 'cash' ? Number(Math.max(0, (Number(state.paymentAmount || 0) - total)).toFixed(2)) : 0,
@@ -566,7 +619,6 @@ export function POSProvider({ children }) {
       fiscal: { training: true, provider: 'none', cae: null, cae_due_date: null, pdf_url: null, extra: {} },
     };
 
-    // Híbrido: solo 'sale' y 'credit' intentan emitir
     if (['sale', 'credit'].includes(type) && state.settings.invoicing?.enabled) {
       try {
         const doc = await issueDocument({ sale, settings: state.settings });
@@ -588,7 +640,6 @@ export function POSProvider({ children }) {
       sale.documentNumber = `TEMP-${Date.now()}`;
     }
 
-    // Guardar venta
     dispatch({ type: 'SAVE_SALE', payload: sale });
 
     toast({

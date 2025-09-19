@@ -47,6 +47,7 @@ const StatCard = ({ title, value, icon, color = 'green', prefix = '', suffix = '
 export default function Statistics() {
   const { state } = usePOS();
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [resetKey, setResetKey] = useState(0); // fuerza rerender al limpiar
 
   const filteredSales = useMemo(() => {
     const startDate = dateRange.start ? new Date(dateRange.start) : null;
@@ -129,8 +130,8 @@ export default function Statistics() {
     return Object.values(acc).sort((a, b) => (a.day < b.day ? -1 : 1));
   }, [filteredSales]);
 
-  // -------- Exportar CSV --------
-  const exportCSV = useCallback(() => {
+  // Helpers para export
+  const buildCSVBlocks = useCallback(() => {
     const sep = ',';
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
@@ -142,6 +143,12 @@ export default function Statistics() {
 
     const headerDays = ['Dia','Monto','Cantidad'].map(esc).join(sep);
     const dayRows = salesByDay.map(d => [d.day, d.amount.toFixed(2), d.count].map(esc).join(sep)).join('\n');
+
+    const headerProducts = ['Producto','Cantidad','Ingresos'].map(esc).join(sep);
+    const rowsProducts = topSellingProducts.map(p => [p.name, Number(p.quantity || 0).toFixed(2), p.revenue.toFixed(2)].map(esc).join(sep)).join('\n');
+
+    const headerCustomers = ['Cliente','Ventas','Total'].map(esc).join(sep);
+    const rowsCustomers = topCustomers.map(c => [c.name, c.count, c.total.toFixed(2)].map(esc).join(sep)).join('\n');
 
     const headerSales = ['Fecha','Documento','Tipo','Cliente','MetodoPago','Total','Ganancia'].map(esc).join(sep);
     const rowsSales = filteredSales.map(s => {
@@ -157,7 +164,8 @@ export default function Statistics() {
       ].map(esc).join(sep);
     }).join('\n');
 
-    const csv =
+    return {
+      csv:
 `RESUMEN
 ${headerSummary}
 ${rowSummary}
@@ -170,11 +178,52 @@ POR_DIA
 ${headerDays}
 ${dayRows}
 
+TOP_PRODUCTOS
+${headerProducts}
+${rowsProducts}
+
+TOP_CLIENTES
+${headerCustomers}
+${rowsCustomers}
+
 VENTAS
 ${headerSales}
 ${rowsSales}
-`;
+`,
+      tsv:
+`RESUMEN
+Ingresos\tGanancia\tVentas\tTicketPromedio\tMargenBruto(%)
+${totalRevenue.toFixed(2)}\t${totalProfit.toFixed(2)}\t${totalSales}\t${averageTicket.toFixed(2)}\t${marginPercentage.toFixed(1)}
 
+PAGO
+Metodo\tMonto\tCantidad
+${paymentBreakdown.map(p=>`${p.method}\t${p.amount.toFixed(2)}\t${p.count}`).join('\n')}
+
+POR_DIA
+Dia\tMonto\tCantidad
+${salesByDay.map(d=>`${d.day}\t${d.amount.toFixed(2)}\t${d.count}`).join('\n')}
+
+TOP_PRODUCTOS
+Producto\tCantidad\tIngresos
+${topSellingProducts.map(p=>`${p.name}\t${Number(p.quantity||0).toFixed(2)}\t${p.revenue.toFixed(2)}`).join('\n')}
+
+TOP_CLIENTES
+Cliente\tVentas\tTotal
+${topCustomers.map(c=>`${c.name}\t${c.count}\t${c.total.toFixed(2)}`).join('\n')}
+
+VENTAS
+Fecha\tDocumento\tTipo\tCliente\tMetodoPago\tTotal\tGanancia
+${filteredSales.map(s=>{
+  const method = s?.payment?.method ?? s?.paymentMethod ?? '';
+  return `${new Date(s.timestamp).toLocaleString()}\t${s.documentNumber}\t${s.type}\t${(s.customer?.name||'Consumidor Final')}\t${method}\t${Number(s.total||0).toFixed(2)}\t${Number(s.profit||0).toFixed(2)}`
+}).join('\n')}
+`
+    };
+  }, [filteredSales, paymentBreakdown, salesByDay, topSellingProducts, topCustomers, totalRevenue, totalProfit, totalSales, averageTicket, marginPercentage]);
+
+  // -------- Exportar CSV --------
+  const exportCSV = useCallback(() => {
+    const { csv } = buildCSVBlocks();
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -185,7 +234,75 @@ ${rowsSales}
     a.remove();
     URL.revokeObjectURL(url);
     toast({ title: 'CSV generado', description: 'El reporte fue descargado.' });
-  }, [filteredSales, paymentBreakdown, salesByDay, totalRevenue, totalProfit, totalSales, averageTicket, marginPercentage]);
+  }, [buildCSVBlocks]);
+
+  // -------- Exportar TXT --------
+  const exportTXT = useCallback(() => {
+    const { tsv } = buildCSVBlocks();
+    const blob = new Blob([tsv], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reporte_pos_${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: 'TXT generado', description: 'El reporte fue descargado.' });
+  }, [buildCSVBlocks]);
+
+  // -------- Exportar Excel (.xls compatible) --------
+  const exportXLS = useCallback(() => {
+    const table = (title, headers, rows) => `
+      <h3 style="font-size:16px;margin:10px 0">${title}</h3>
+      <table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;">
+        <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+      <br/>
+    `;
+
+    const payRows = paymentBreakdown.map(p => [p.method, p.amount.toFixed(2), p.count]);
+    const dayRows = salesByDay.map(d => [d.day, d.amount.toFixed(2), d.count]);
+    const prodRows = topSellingProducts.map(p => [p.name, Number(p.quantity||0).toFixed(2), p.revenue.toFixed(2)]);
+    const custRows = topCustomers.map(c => [c.name, c.count, c.total.toFixed(2)]);
+    const salesRows = filteredSales.map(s => {
+      const method = s?.payment?.method ?? s?.paymentMethod ?? '';
+      return [
+        new Date(s.timestamp).toLocaleString(),
+        s.documentNumber,
+        s.type,
+        s.customer?.name || 'Consumidor Final',
+        method,
+        Number(s.total || 0).toFixed(2),
+        Number(s.profit || 0).toFixed(2),
+      ];
+    });
+
+    const html =
+      `<!doctype html><html><head><meta charset="utf-8"></head><body>
+        <h2 style="font-size:20px">Reporte POS</h2>
+        <div>Generado: ${new Date().toLocaleString()}</div>
+        ${table('Resumen', ['Ingresos','Ganancia','Ventas','Ticket Promedio','Margen Bruto %'],
+          [[totalRevenue.toFixed(2), totalProfit.toFixed(2), totalSales, averageTicket.toFixed(2), marginPercentage.toFixed(1)]])}
+        ${table('Desglose por método de pago', ['Método','Monto','Cantidad'], payRows)}
+        ${table('Ventas por día', ['Día','Monto','Cantidad'], dayRows)}
+        ${table('Top 5 Productos', ['Producto','Cant.','Ingresos'], prodRows)}
+        ${table('Top 5 Clientes', ['Cliente','Ventas','Total'], custRows)}
+        ${table('Detalle de ventas', ['Fecha','Documento','Tipo','Cliente','Pago','Total','Ganancia'], salesRows)}
+      </body></html>`;
+
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reporte_pos_${Date.now()}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Excel generado', description: 'El archivo .xls fue descargado.' });
+  }, [filteredSales, paymentBreakdown, salesByDay, topSellingProducts, topCustomers, totalRevenue, totalProfit, totalSales, averageTicket, marginPercentage]);
 
   // -------- Exportar PDF (ventana imprimible) --------
   const exportPDF = useCallback(() => {
@@ -221,7 +338,7 @@ ${rowsSales}
       </tr>`;
     }).join('');
 
-    const prodRows = topSellingProducts.map(p => `<tr><td>${p.name}</td><td class="right">${p.quantity.toFixed(2)}</td><td class="right">${currencyFmt(p.revenue)}</td></tr>`).join('');
+    const prodRows = topSellingProducts.map(p => `<tr><td>${p.name}</td><td class="right">${Number(p.quantity||0).toFixed(2)}</td><td class="right">${currencyFmt(p.revenue)}</td></tr>`).join('');
     const custRows = topCustomers.map(c => `<tr><td>${c.name}</td><td class="right">${c.count}</td><td class="right">${currencyFmt(c.total)}</td></tr>`).join('');
 
     const html = `
@@ -281,6 +398,8 @@ ${rowsSales}
   const exportReport = (format) => {
     if (format === 'csv') return exportCSV();
     if (format === 'pdf') return exportPDF();
+    if (format === 'txt') return exportTXT();
+    if (format === 'xls') return exportXLS();
     toast({ title: `Formato no soportado`, description: String(format) });
   };
 
@@ -289,7 +408,13 @@ ${rowsSales}
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Estadísticas y Reportes</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => exportReport('xls')}>
+            <FileDown className="h-4 w-4 mr-2" />Excel
+          </Button>
+          <Button variant="outline" onClick={() => exportReport('txt')}>
+            <FileDown className="h-4 w-4 mr-2" />TXT
+          </Button>
           <Button variant="outline" onClick={() => exportReport('csv')}>
             <FileDown className="h-4 w-4 mr-2" />CSV
           </Button>
@@ -305,18 +430,26 @@ ${rowsSales}
           <Calendar className="h-5 w-5 text-primary" />
           <div className="flex items-center gap-2">
             <Input
+              key={`start-${resetKey}`}
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange((r) => ({ ...r, start: e.target.value }))}
             />
             <span className="text-muted-foreground">a</span>
             <Input
+              key={`end-${resetKey}`}
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange((r) => ({ ...r, end: e.target.value }))}
             />
           </div>
-          <Button onClick={() => setDateRange({ start: '', end: '' })} variant="outline">
+          <Button
+            onClick={() => {
+              setDateRange({ start: '', end: '' });
+              setResetKey((k) => k + 1); // fuerza rerender y limpia UI
+            }}
+            variant="outline"
+          >
             Limpiar
           </Button>
         </div>
@@ -472,14 +605,6 @@ ${rowsSales}
           </div>
         </div>
       </div>
-
-      {/* Placeholder de novedades (si querés conservar la sección original) */}
-      {/* <div className="card-glass p-6 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4">Novedades</h2>
-        <div className="h-64 flex items-center justify-center">
-          <p className="text-muted-foreground">Reportes de stock bajo, recompras, etc. Próximamente 🚀</p>
-        </div>
-      </div> */}
     </div>
   );
 }

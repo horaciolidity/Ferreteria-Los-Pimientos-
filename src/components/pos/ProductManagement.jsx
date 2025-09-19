@@ -1,7 +1,7 @@
-
+// src/components/pos/ProductManagement.jsx
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Package, Plus, Edit3, Trash2, Upload, Download, Search, Minus } from 'lucide-react';
+import { Package, Plus, Edit3, Trash2, Upload, Download, Search, Minus, FileDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,12 +28,14 @@ export default function ProductManagement() {
   });
 
   const categories = [...new Set(state.products.map(p => p.category).filter(Boolean))];
-  
-  const filteredProducts = state.products.filter(product =>
-    product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    product.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    product.category?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+
+  const q = (searchQuery || '').toLowerCase();
+  const filteredProducts = state.products.filter(product => {
+    const name = String(product.name ?? '').toLowerCase();
+    const code = String(product.code ?? '').toLowerCase();
+    const cat  = String(product.category ?? '').toLowerCase();
+    return name.includes(q) || code.includes(q) || cat.includes(q);
+  });
 
   const resetForm = () => {
     setNewProduct({
@@ -69,99 +71,366 @@ export default function ProductManagement() {
   };
 
   const handleEditProduct = (product) => {
-    setNewProduct(product);
+    setNewProduct({
+      code: product.code ?? '',
+      name: product.name ?? '',
+      price: Number(product.price ?? 0),
+      cost: Number(product.cost ?? 0),
+      stock: Number(product.stock ?? 0),
+      unit: product.unit || 'unidad',
+      category: product.category ?? '',
+      providerId: product.providerId ?? '',
+      minStock: Number(product.minStock ?? 0)
+    });
     setEditingProduct(product);
     setIsAddDialogOpen(true);
   };
 
   const handleDeleteProduct = (productId) => {
-    dispatch({ type: 'DELETE_PRODUCT', payload: productId });
-    toast({ title: "Producto eliminado", description: "El producto ha sido eliminado" });
+    const prod = state.products.find(p => p.id === productId);
+    if (!prod) return;
+    if (window.confirm(`¿Eliminar el producto "${prod.name}"?`)) {
+      dispatch({ type: 'DELETE_PRODUCT', payload: productId });
+      toast({ title: "Producto eliminado", description: `"${prod.name}" ha sido eliminado` });
+    }
   };
 
-  const exportProducts = () => {
-    const dataStr = JSON.stringify(state.products, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'productos.json';
-    link.click();
+  /* ---------------- Exportadores (CSV / TXT / XLS) ---------------- */
+  const exportCSV = () => {
+    const sep = ',';
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = [
+      'Código','Nombre','Proveedor','Precio','Costo','Stock','Unidad','Categoría','MinStock'
+    ].map(esc).join(sep);
+
+    const rows = state.products.map(p => {
+      const provider = state.providers.find(pr => pr.id === p.providerId);
+      return [
+        p.code, p.name, provider?.name || '',
+        Number(p.price ?? 0).toFixed(2),
+        Number(p.cost ?? 0).toFixed(2),
+        Number(p.stock ?? 0),
+        p.unit || 'unidad',
+        p.category || '',
+        Number(p.minStock ?? 0)
+      ].map(esc).join(sep);
+    }).join('\n');
+
+    const csv = `${header}\n${rows}`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `productos_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     URL.revokeObjectURL(url);
-    toast({ title: "Productos exportados" });
+    toast({ title: "CSV generado", description: "Se descargó el archivo." });
+  };
+
+  const exportTXT = () => {
+    const header = 'Código\tNombre\tProveedor\tPrecio\tCosto\tStock\tUnidad\tCategoría\tMinStock';
+    const rows = state.products.map(p => {
+      const provider = state.providers.find(pr => pr.id === p.providerId);
+      return [
+        p.code ?? '',
+        p.name ?? '',
+        provider?.name || '',
+        Number(p.price ?? 0).toFixed(2),
+        Number(p.cost ?? 0).toFixed(2),
+        Number(p.stock ?? 0),
+        p.unit || 'unidad',
+        p.category || '',
+        Number(p.minStock ?? 0)
+      ].join('\t');
+    }).join('\n');
+
+    const tsv = `${header}\n${rows}`;
+    const blob = new Blob([tsv], { type: 'text/plain;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `productos_${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: "TXT generado", description: "Se descargó el archivo." });
+  };
+
+  const exportXLS = () => {
+    const table = (headers, rows) => `
+      <table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;">
+        <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+    `;
+
+    const headers = ['Código','Nombre','Proveedor','Precio','Costo','Stock','Unidad','Categoría','MinStock'];
+    const rows = state.products.map(p => {
+      const provider = state.providers.find(pr => pr.id === p.providerId);
+      return [
+        p.code ?? '',
+        p.name ?? '',
+        provider?.name || '',
+        Number(p.price ?? 0).toFixed(2),
+        Number(p.cost ?? 0).toFixed(2),
+        Number(p.stock ?? 0),
+        p.unit || 'unidad',
+        p.category || '',
+        Number(p.minStock ?? 0)
+      ];
+    });
+
+    const html =
+      `<!doctype html><html><head><meta charset="utf-8"></head><body>
+        <h2 style="font-size:18px">Productos</h2>
+        <div>Generado: ${new Date().toLocaleString()}</div>
+        ${table(headers, rows)}
+      </body></html>`;
+
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `productos_${Date.now()}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: "Excel generado", description: "Se descargó el archivo .xls." });
   };
 
   const importProducts = () => {
-    toast({ title: "🚧 Esta funcionalidad no está implementada" });
+    toast({ title: "🚧 Importar", description: "Aún no implementado (si querés, lo hago leyendo CSV/TXT)." });
   };
 
   const adjustStock = (productId, adjustment) => {
     const product = state.products.find(p => p.id === productId);
     if (!product) return;
-    const newStock = Math.max(0, product.stock + adjustment);
+    const newStock = Math.max(0, Number(product.stock || 0) + Number(adjustment || 0));
     dispatch({ type: 'UPDATE_PRODUCT', payload: { id: productId, updates: { stock: newStock } } });
     toast({ title: "Stock ajustado", description: `${product.name}: ${product.stock} → ${newStock}` });
   };
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Gestión de Productos</h1>
-        <div className="flex space-x-2">
-          <Button onClick={importProducts} variant="outline"><Upload className="h-4 w-4 mr-2" />Importar</Button>
-          <Button onClick={exportProducts} variant="outline"><Download className="h-4 w-4 mr-2" />Exportar</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={importProducts} variant="outline">
+            <Upload className="h-4 w-4 mr-2" />Importar
+          </Button>
+          <Button onClick={exportXLS} variant="outline" title="Exportar a Excel (.xls)">
+            <FileDown className="h-4 w-4 mr-2" />XLS
+          </Button>
+          <Button onClick={exportTXT} variant="outline" title="Exportar a TXT (tabulado)">
+            <FileDown className="h-4 w-4 mr-2" />TXT
+          </Button>
+          <Button onClick={exportCSV} variant="outline" title="Exportar a CSV">
+            <Download className="h-4 w-4 mr-2" />CSV
+          </Button>
+
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-            <DialogTrigger asChild><Button onClick={resetForm}><Plus className="h-4 w-4 mr-2" />Nuevo Producto</Button></DialogTrigger>
+            <DialogTrigger asChild>
+              <Button onClick={resetForm}><Plus className="h-4 w-4 mr-2" />Nuevo Producto</Button>
+            </DialogTrigger>
             <DialogContent className="card-glass border-border max-w-2xl">
-              <DialogHeader><DialogTitle>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle>{editingProduct ? 'Editar Producto' : 'Nuevo Producto'}</DialogTitle>
+              </DialogHeader>
+
               <div className="grid grid-cols-2 gap-4">
-                <div><Label htmlFor="code">Código *</Label><Input id="code" value={newProduct.code} onChange={(e) => setNewProduct({ ...newProduct, code: e.target.value })} /></div>
-                <div><Label htmlFor="name">Nombre *</Label><Input id="name" value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} /></div>
-                <div><Label htmlFor="price">Precio</Label><Input id="price" type="number" step="0.01" min="0" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) || 0 })} /></div>
-                <div><Label htmlFor="cost">Costo</Label><Input id="cost" type="number" step="0.01" min="0" value={newProduct.cost} onChange={(e) => setNewProduct({ ...newProduct, cost: parseFloat(e.target.value) || 0 })} /></div>
-                <div><Label htmlFor="stock">Stock</Label><Input id="stock" type="number" min="0" value={newProduct.stock} onChange={(e) => setNewProduct({ ...newProduct, stock: parseFloat(e.target.value) || 0 })} /></div>
-                <div><Label htmlFor="unit">Unidad</Label><Select value={newProduct.unit} onValueChange={(value) => setNewProduct({ ...newProduct, unit: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unidad">Unidad</SelectItem><SelectItem value="kg">Kilogramo</SelectItem><SelectItem value="metro">Metro</SelectItem><SelectItem value="litro">Litro</SelectItem></SelectContent></Select></div>
-                <div><Label htmlFor="category">Categoría</Label><Input id="category" value={newProduct.category} onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })} list="categories" /><datalist id="categories">{categories.map(cat => (<option key={cat} value={cat} />))}</datalist></div>
-                <div><Label htmlFor="providerId">Proveedor</Label><Select value={newProduct.providerId} onValueChange={(value) => setNewProduct({ ...newProduct, providerId: value })}><SelectTrigger><SelectValue placeholder="Seleccionar..."/></SelectTrigger><SelectContent>{state.providers.map(p => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}</SelectContent></Select></div>
-                <div><Label htmlFor="minStock">Stock mínimo</Label><Input id="minStock" type="number" min="0" value={newProduct.minStock} onChange={(e) => setNewProduct({ ...newProduct, minStock: parseFloat(e.target.value) || 0 })} /></div>
+                <div>
+                  <Label htmlFor="code">Código *</Label>
+                  <Input
+                    id="code"
+                    value={newProduct.code}
+                    onChange={(e) => setNewProduct({ ...newProduct, code: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="name">Nombre *</Label>
+                  <Input
+                    id="name"
+                    value={newProduct.name}
+                    onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="price">Precio</Label>
+                  <Input
+                    id="price"
+                    type="number" step="0.01" min="0"
+                    value={newProduct.price}
+                    onChange={(e) => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="cost">Costo</Label>
+                  <Input
+                    id="cost"
+                    type="number" step="0.01" min="0"
+                    value={newProduct.cost}
+                    onChange={(e) => setNewProduct({ ...newProduct, cost: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="stock">Stock</Label>
+                  <Input
+                    id="stock"
+                    type="number" min="0"
+                    value={newProduct.stock}
+                    onChange={(e) => setNewProduct({ ...newProduct, stock: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="unit">Unidad</Label>
+                  <Select value={newProduct.unit} onValueChange={(value) => setNewProduct({ ...newProduct, unit: value })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unidad">Unidad</SelectItem>
+                      <SelectItem value="kg">Kilogramo</SelectItem>
+                      <SelectItem value="metro">Metro</SelectItem>
+                      <SelectItem value="litro">Litro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="category">Categoría</Label>
+                  <Input
+                    id="category"
+                    value={newProduct.category}
+                    onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
+                    list="categories"
+                  />
+                  <datalist id="categories">
+                    {categories.map(cat => (<option key={cat} value={cat} />))}
+                  </datalist>
+                </div>
+                <div>
+                  <Label htmlFor="providerId">Proveedor</Label>
+                  <Select
+                    value={newProduct.providerId}
+                    onValueChange={(value) => setNewProduct({ ...newProduct, providerId: value })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Seleccionar..."/></SelectTrigger>
+                    <SelectContent>
+                      {state.providers.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="minStock">Stock mínimo</Label>
+                  <Input
+                    id="minStock"
+                    type="number" min="0"
+                    value={newProduct.minStock}
+                    onChange={(e) => setNewProduct({ ...newProduct, minStock: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
               </div>
-              <div className="flex space-x-2 mt-4"><Button onClick={handleSaveProduct} className="flex-1">{editingProduct ? 'Actualizar' : 'Agregar'}</Button><Button variant="outline" onClick={() => { setIsAddDialogOpen(false); resetForm(); }}>Cancelar</Button></div>
+
+              <div className="flex space-x-2 mt-4">
+                <Button onClick={handleSaveProduct} className="flex-1">
+                  {editingProduct ? 'Actualizar' : 'Agregar'}
+                </Button>
+                <Button variant="outline" onClick={() => { setIsAddDialogOpen(false); resetForm(); }}>
+                  Cancelar
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
-      <div className="card-glass p-4 rounded-lg"><div className="flex items-center space-x-4"><Search className="h-5 w-5 text-primary" /><Input placeholder="Buscar productos..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="flex-1" /></div></div>
+      {/* Buscador */}
+      <div className="card-glass p-4 rounded-lg">
+        <div className="flex items-center space-x-4">
+          <Search className="h-5 w-5 text-primary" />
+          <Input
+            placeholder="Buscar productos..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="flex-1"
+          />
+        </div>
+      </div>
 
-      <div className="card-glass p-6 rounded-lg"><div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead><tr className="border-b border-border"><th className="text-left text-muted-foreground p-2">Código</th><th className="text-left text-muted-foreground p-2">Nombre</th><th className="text-left text-muted-foreground p-2">Proveedor</th><th className="text-right text-muted-foreground p-2">Precio</th><th className="text-right text-muted-foreground p-2">Stock</th><th className="text-right text-muted-foreground p-2">Margen</th><th className="text-center text-muted-foreground p-2">Acciones</th></tr></thead>
-          <tbody>
-            {filteredProducts.map((product, index) => {
-              const margin = product.price > 0 ? ((product.price - product.cost) / product.price * 100) : 0;
-              const stockColor = product.stock <= product.minStock ? (product.stock === 0 ? 'text-red-500' : 'text-yellow-500') : 'text-green-500';
-              const provider = state.providers.find(p => p.id === product.providerId);
-              return (
-                <motion.tr key={product.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} className="border-b border-border/50 hover:bg-accent">
-                  <td className="p-3 text-muted-foreground">{product.code}</td>
-                  <td className="p-3 font-medium">{product.name}</td>
-                  <td className="p-3 text-muted-foreground">{provider?.name || 'N/A'}</td>
-                  <td className="p-3 text-right">${product.price.toFixed(2)}</td>
-                  <td className={`p-3 text-right font-medium ${stockColor}`}>{product.stock} {product.unit}</td>
-                  <td className="p-3 text-right text-green-500">{margin.toFixed(1)}%</td>
-                  <td className="p-3"><div className="flex items-center justify-center space-x-1">
-                    <Button size="icon" variant="ghost" onClick={() => adjustStock(product.id, -1)} className="h-8 w-8 text-red-500"><Minus size={16} /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => adjustStock(product.id, 1)} className="h-8 w-8 text-green-500"><Plus size={16} /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => handleEditProduct(product)} className="h-8 w-8 text-primary"><Edit3 size={16} /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => handleDeleteProduct(product.id)} className="h-8 w-8 text-red-500"><Trash2 size={16} /></Button>
-                  </div></td>
-                </motion.tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {filteredProducts.length === 0 && <div className="text-center py-8"><Package className="h-12 w-12 text-muted-foreground/50 mx-auto mb-2" /><p className="text-muted-foreground">No se encontraron productos</p></div>}
-      </div></div>
+      {/* Tabla */}
+      <div className="card-glass p-6 rounded-lg">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left text-muted-foreground p-2">Código</th>
+                <th className="text-left text-muted-foreground p-2">Nombre</th>
+                <th className="text-left text-muted-foreground p-2">Proveedor</th>
+                <th className="text-right text-muted-foreground p-2">Precio</th>
+                <th className="text-right text-muted-foreground p-2">Stock</th>
+                <th className="text-right text-muted-foreground p-2">Margen</th>
+                <th className="text-center text-muted-foreground p-2">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProducts.map((product, index) => {
+                const price = Number(product.price ?? 0);
+                const cost  = Number(product.cost ?? 0);
+                const margin = price > 0 ? ((price - cost) / price * 100) : 0;
+                const stock = Number(product.stock ?? 0);
+                const stockColor = stock <= Number(product.minStock ?? 0)
+                  ? (stock === 0 ? 'text-red-500' : 'text-yellow-500')
+                  : 'text-green-500';
+                const provider = state.providers.find(p => p.id === product.providerId);
+
+                return (
+                  <motion.tr
+                    key={product.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="border-b border-border/50 hover:bg-accent"
+                  >
+                    <td className="p-3 text-muted-foreground">{product.code}</td>
+                    <td className="p-3 font-medium">{product.name}</td>
+                    <td className="p-3 text-muted-foreground">{provider?.name || 'N/A'}</td>
+                    <td className="p-3 text-right">${price.toFixed(2)}</td>
+                    <td className={`p-3 text-right font-medium ${stockColor}`}>{stock} {product.unit || 'unidad'}</td>
+                    <td className="p-3 text-right text-green-500">{margin.toFixed(1)}%</td>
+                    <td className="p-3">
+                      <div className="flex items-center justify-center space-x-1">
+                        <Button size="icon" variant="ghost" onClick={() => adjustStock(product.id, -1)} className="h-8 w-8 text-red-500">
+                          <Minus size={16} />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => adjustStock(product.id, 1)} className="h-8 w-8 text-green-500">
+                          <Plus size={16} />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => handleEditProduct(product)} className="h-8 w-8 text-primary">
+                          <Edit3 size={16} />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => handleDeleteProduct(product.id)} className="h-8 w-8 text-red-500">
+                          <Trash2 size={16} />
+                        </Button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {filteredProducts.length === 0 && (
+            <div className="text-center py-8">
+              <Package className="h-12 w-12 text-muted-foreground/50 mx-auto mb-2" />
+              <p className="text-muted-foreground">No se encontraron productos</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 // src/components/pos/SalesHistory.jsx
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { History, Printer, Package, DollarSign, Percent, Search, CheckSquare } from 'lucide-react';
+import { History, Printer, Package, DollarSign, Percent, Search, CheckSquare, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -50,6 +50,7 @@ const SaleDetail = ({ sale }) => {
   const reprintTicket = () => setPreviewOpen(true);
 
   const convertToSale = () => {
+    // Nota: asegurate de implementar esta acción en el reducer si la vas a usar.
     dispatch?.({ type: 'CONVERT_QUOTE_TO_SALE', payload: sale });
     toast({ title: 'Presupuesto convertido', description: 'El presupuesto se ha convertido a una venta.' });
   };
@@ -202,7 +203,7 @@ const SaleDetail = ({ sale }) => {
 };
 
 export default function SalesHistory() {
-  const { state } = usePOS();
+  const { state, dispatch } = usePOS();
   const [filters, setFilters] = useState({
     dateStart: '',
     dateEnd: '',
@@ -211,9 +212,14 @@ export default function SalesHistory() {
     search: '',
   });
 
+  // Base DESC por fecha: última venta arriba
+  const salesDesc = useMemo(
+    () => ([...(state.sales || [])]).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
+    [state.sales]
+  );
+
   const filteredSales = useMemo(() => {
-    const list = [...(state.sales || [])].reverse();
-    return list.filter((sale) => {
+    return salesDesc.filter((sale) => {
       const saleDate = new Date(sale.timestamp);
       const startDate = filters.dateStart ? new Date(filters.dateStart) : null;
       const endDate = filters.dateEnd ? new Date(filters.dateEnd) : null;
@@ -234,13 +240,27 @@ export default function SalesHistory() {
       }
       return true;
     });
-  }, [state.sales, filters]);
+  }, [salesDesc, filters]);
 
   const handleFilterChange = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
 
+  const clearAll = () => {
+    if (filteredSales.length === 0 && (state.sales || []).length === 0) return;
+    if (window.confirm(`Se eliminará TODO el historial de ventas (${(state.sales || []).length} registros). ¿Continuar?`)) {
+      dispatch({ type: 'CLEAR_SALES_HISTORY' }); // recuerda tener este case en el reducer
+      toast({ title: 'Historial eliminado', description: 'Se borraron todas las ventas guardadas.' });
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Historial de Operaciones</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Historial de Operaciones</h1>
+        <Button variant="destructive" onClick={clearAll}>
+          <Trash2 className="h-4 w-4 mr-2" />
+          Eliminar todo
+        </Button>
+      </div>
 
       {/* Filtros */}
       <div className="card-glass p-4 rounded-lg">
