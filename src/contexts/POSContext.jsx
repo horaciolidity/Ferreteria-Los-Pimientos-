@@ -266,31 +266,75 @@ function posReducer(state, action) {
       let cashRegister = { ...state.cashRegister };
       if (cashRegister.isOpen) {
         const method = sale.payment?.method || state.paymentMethod || 'cash';
-        const total = Number(sale.total || 0);
-        const paid  = Number(sale.payment?.amountPaid || 0);
+        const total  = Number(sale.total || 0);
+        const paid   = Number(sale.payment?.amountPaid || 0);
         const change = Number(sale.payment?.change || 0);
 
         if (method === 'cash') {
-          // Ajustar SOLO el efectivo real en caja (sin crear movimientos por venta/vuelto)
-          if (total > 0) cashRegister.currentAmount += total;
-          if (change > 0) cashRegister.currentAmount -= change;
+          if (total > 0) {
+            cashRegister.currentAmount += total;
+            cashRegister.movements.push({
+              id: cryptoRandom(), type: 'income', concept: `Venta ${sale.documentNumber}`, amount: total, timestamp: new Date().toISOString(),
+            });
+          }
+          if (change > 0) {
+            cashRegister.currentAmount -= change;
+            cashRegister.movements.push({
+              id: cryptoRandom(), type: 'expense', concept: `Vuelto ${sale.documentNumber}`, amount: change, timestamp: new Date().toISOString(),
+            });
+          }
+          cashRegister.salesByType.cash = Number(cashRegister.salesByType.cash || 0) + total;
+
         } else if (method === 'mixed') {
           // Parte efectivamente recibida en EFECTIVO
           const cashPart = Math.min(paid, total);
           if (cashPart > 0) {
             cashRegister.currentAmount += cashPart;
             cashRegister.cashFromMixed = Number(cashRegister.cashFromMixed || 0) + cashPart;
+            cashRegister.movements.push({
+              id: cryptoRandom(), type: 'income', concept: `Venta (mixto) ${sale.documentNumber}`, amount: cashPart, timestamp: new Date().toISOString(),
+            });
           }
-        }
+          cashRegister.salesByType.mixed = Number(cashRegister.salesByType.mixed || 0) + total;
 
-        // Total por método (registro de gestión)
-        cashRegister.salesByType[method] = Number(cashRegister.salesByType[method] || 0) + total;
+        } else if (method === 'account') {
+          // *** A CUENTA con pago parcial ***
+          const upfront = Math.max(0, paid); // lo que entregó ahora (efectivo/seña)
+          if (upfront > 0) {
+            cashRegister.currentAmount += upfront;
+            cashRegister.movements.push({
+              id: cryptoRandom(),
+              type: 'income',
+              concept: `Seña a cuenta ${sale.documentNumber}`,
+              amount: upfront,
+              timestamp: new Date().toISOString(),
+            });
+            // lo registramos en métricas también
+            cashRegister.salesByType.cash = Number(cashRegister.salesByType.cash || 0) + upfront;
+          }
+          // el total entero se considera operación "a cuenta" para métricas
+          cashRegister.salesByType.account = Number(cashRegister.salesByType.account || 0) + total;
+
+        } else if (method === 'transfer' || method === 'card') {
+          // No afecta caja física
+          cashRegister.salesByType[method] = Number(cashRegister.salesByType[method] || 0) + total;
+
+        } else {
+          // fallback por si aparece otro método
+          cashRegister.salesByType[method] = Number(cashRegister.salesByType[method] || 0) + total;
+        }
       }
 
-      // Cuenta corriente (crédito)
+      // Cuenta corriente (crédito / a cuenta)
       let customers = state.customers;
-      if ((sale.type === 'credit' || sale.payment?.method === 'account') && sale.customer?.id) {
-        customers = customers.map(c => (c.id === sale.customer.id ? { ...c, balance: Number(c.balance || 0) - Number(sale.total || 0) } : c));
+      const method = sale.payment?.method || state.paymentMethod || 'cash';
+      if ((sale.type === 'credit' || method === 'account') && sale.customer?.id) {
+        const total = Number(sale.total || 0);
+        const upfront = Math.max(0, Number(sale.payment?.amountPaid || 0));
+        const toAccount = Math.max(0, total - upfront); // lo que realmente queda debiendo
+        customers = customers.map(c =>
+          (c.id === sale.customer.id ? { ...c, balance: Number(c.balance || 0) - toAccount } : c)
+        );
       }
 
       // providerRestock
