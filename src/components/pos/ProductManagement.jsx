@@ -20,13 +20,13 @@ export default function ProductManagement() {
   const [newProduct, setNewProduct] = useState({
     code: '',
     name: '',
-    price: 0,
-    cost: 0,
+    price: '',
+    cost: '',
     stock: 0,
     unit: 'unidad',
     category: '',
     providerId: '',
-    minStock: 0
+    minStock: 0,
   });
 
   const categories = [...new Set(state.products.map(p => p.category).filter(Boolean))];
@@ -35,7 +35,7 @@ export default function ProductManagement() {
   const filteredProducts = state.products.filter(product => {
     const name = String(product.name ?? '').toLowerCase();
     const code = String(product.code ?? '').toLowerCase();
-    const cat  = String(product.category ?? '').toLowerCase();
+    const cat = String(product.category ?? '').toLowerCase();
     return name.includes(q) || code.includes(q) || cat.includes(q);
   });
 
@@ -43,29 +43,37 @@ export default function ProductManagement() {
     setNewProduct({
       code: '',
       name: '',
-      price: 0,
-      cost: 0,
+      price: '',
+      cost: '',
       stock: 0,
       unit: 'unidad',
       category: '',
       providerId: '',
-      minStock: 0
+      minStock: 0,
     });
     setEditingProduct(null);
   };
 
   const handleSaveProduct = () => {
     if (!newProduct.name.trim() || !newProduct.code.trim()) {
-      toast({ title: "Error", description: "Nombre y código son requeridos", variant: "destructive" });
+      toast({ title: 'Error', description: 'Nombre y código son requeridos', variant: 'destructive' });
       return;
     }
 
+    const normalizedProduct = {
+      ...newProduct,
+      price: Number(newProduct.price) || 0,
+      cost: Number(newProduct.cost) || 0,
+      stock: Number(newProduct.stock) || 0,
+      minStock: Number(newProduct.minStock) || 0,
+    };
+
     if (editingProduct) {
-      dispatch({ type: 'UPDATE_PRODUCT', payload: { id: editingProduct.id, updates: newProduct } });
-      toast({ title: "Producto actualizado", description: `${newProduct.name} ha sido actualizado` });
+      dispatch({ type: 'UPDATE_PRODUCT', payload: { id: editingProduct.id, updates: normalizedProduct } });
+      toast({ title: 'Producto actualizado', description: `${normalizedProduct.name} ha sido actualizado` });
     } else {
-      dispatch({ type: 'ADD_PRODUCT', payload: newProduct });
-      toast({ title: "Producto agregado", description: `${newProduct.name} ha sido agregado` });
+      dispatch({ type: 'ADD_PRODUCT', payload: normalizedProduct });
+      toast({ title: 'Producto agregado', description: `${normalizedProduct.name} ha sido agregado` });
     }
 
     setIsAddDialogOpen(false);
@@ -76,13 +84,13 @@ export default function ProductManagement() {
     setNewProduct({
       code: product.code ?? '',
       name: product.name ?? '',
-      price: Number(product.price ?? 0),
-      cost: Number(product.cost ?? 0),
+      price: String(product.price ?? ''),
+      cost: String(product.cost ?? ''),
       stock: Number(product.stock ?? 0),
       unit: product.unit || 'unidad',
       category: product.category ?? '',
       providerId: product.providerId ?? '',
-      minStock: Number(product.minStock ?? 0)
+      minStock: Number(product.minStock ?? 0),
     });
     setEditingProduct(product);
     setIsAddDialogOpen(true);
@@ -93,34 +101,34 @@ export default function ProductManagement() {
     if (!prod) return;
     if (window.confirm(`¿Eliminar el producto "${prod.name}"?`)) {
       dispatch({ type: 'DELETE_PRODUCT', payload: productId });
-      toast({ title: "Producto eliminado", description: `"${prod.name}" ha sido eliminado` });
+      toast({ title: 'Producto eliminado', description: `"${prod.name}" ha sido eliminado` });
     }
   };
 
   /* ---------------- Importar lista TXT/CSV ---------------- */
   const importProductsClick = () => fileInputRef.current?.click();
 
-  const normalizeKey = (s='') =>
-    s.toString()
-     .toLowerCase()
-     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')  // quita acentos
-     .replace(/\s+/g,'')
-     .replace(/[^a-z0-9_]/g,'');
+  const normalizeKey = (s = '') =>
+    s
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '')
+      .replace(/[^a-z0-9_]/g, '');
 
   const parseNumber = (v) => {
     if (v == null) return null;
     const str = String(v).trim();
     if (!str) return null;
-    // soporte "1.234,56" y "1,234.56"
     const hasComma = str.includes(',');
-    const hasDot   = str.includes('.');
-    let clean = str.replace(/\s/g,'');
+    const hasDot = str.includes('.');
+    let clean = str.replace(/\s/g, '');
     if (hasComma && hasDot) {
-      // asume coma decimal si última coma está después del último punto
       const lastComma = clean.lastIndexOf(',');
-      const lastDot   = clean.lastIndexOf('.');
-      if (lastComma > lastDot) clean = clean.replace(/\./g,'').replace(',', '.');
-      else clean = clean.replace(/,/g,'');
+      const lastDot = clean.lastIndexOf('.');
+      if (lastComma > lastDot) clean = clean.replace(/\./g, '').replace(',', '.');
+      else clean = clean.replace(/,/g, '');
     } else if (hasComma && !hasDot) {
       clean = clean.replace(',', '.');
     }
@@ -131,8 +139,8 @@ export default function ProductManagement() {
   const detectSep = (text) => {
     const first = (text.split(/\r?\n/)[0] || '');
     if (first.includes('\t')) return '\t';
-    if (first.includes(';'))  return ';';
-    return ','; // default CSV
+    if (first.includes(';')) return ';';
+    return ',';
   };
 
   const importFromFile = async (file) => {
@@ -146,7 +154,6 @@ export default function ProductManagement() {
         return;
       }
 
-      // cabecera
       const header = lines[0].split(sep).map(h => normalizeKey(h));
       const idx = (names) => {
         const targets = Array.isArray(names) ? names : [names];
@@ -157,24 +164,29 @@ export default function ProductManagement() {
         return -1;
       };
 
-      const iCode  = idx(['code','codigo','código']);
-      const iName  = idx(['name','nombre']);
-      const iPrice = idx(['price','precio']);
-      const iCost  = idx(['cost','costo']);
+      const iCode = idx(['code', 'codigo', 'código']);
+      const iName = idx(['name', 'nombre']);
+      const iPrice = idx(['price', 'precio']);
+      const iCost = idx(['cost', 'costo']);
       const iStock = idx(['stock']);
-      const iMin   = idx(['minstock','stockminimo','stockmin']);
+      const iMin = idx(['minstock', 'stockminimo', 'stockmin']);
 
       if (iCode === -1 && iName === -1) {
-        toast({ title: 'Cabecera inválida', description: 'Debe existir "code/código" o "name/nombre".', variant: 'destructive' });
+        toast({
+          title: 'Cabecera inválida',
+          description: 'Debe existir "code/código" o "name/nombre".',
+          variant: 'destructive',
+        });
         return;
       }
 
-      let found = 0, updated = 0, notFound = 0;
+      let found = 0,
+        updated = 0,
+        notFound = 0;
       const updates = [];
 
-      // Mapas para búsquedas rápidas
-      const byCode  = new Map(state.products.map(p => [String(p.code ?? '').toLowerCase(), p]));
-      const byName  = new Map(state.products.map(p => [String(p.name ?? '').toLowerCase(), p]));
+      const byCode = new Map(state.products.map(p => [String(p.code ?? '').toLowerCase(), p]));
+      const byName = new Map(state.products.map(p => [String(p.name ?? '').toLowerCase(), p]));
 
       for (let li = 1; li < lines.length; li++) {
         const cols = lines[li].split(sep);
@@ -185,7 +197,10 @@ export default function ProductManagement() {
         if (code) prod = byCode.get(code.toLowerCase());
         if (!prod && name) prod = byName.get(name.toLowerCase());
 
-        if (!prod) { notFound++; continue; }
+        if (!prod) {
+          notFound++;
+          continue;
+        }
         found++;
 
         const upd = {};
@@ -234,26 +249,32 @@ No encontrados: ${notFound}
   const exportCSV = () => {
     const sep = ',';
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const header = [
-      'Código','Nombre','Proveedor','Precio','Costo','Stock','Unidad','Categoría','MinStock'
-    ].map(esc).join(sep);
+    const header = ['Código', 'Nombre', 'Proveedor', 'Precio', 'Costo', 'Stock', 'Unidad', 'Categoría', 'MinStock']
+      .map(esc)
+      .join(sep);
 
-    const rows = state.products.map(p => {
-      const provider = state.providers.find(pr => pr.id === p.providerId);
-      return [
-        p.code, p.name, provider?.name || '',
-        Number(p.price ?? 0).toFixed(2),
-        Number(p.cost ?? 0).toFixed(2),
-        Number(p.stock ?? 0),
-        p.unit || 'unidad',
-        p.category || '',
-        Number(p.minStock ?? 0)
-      ].map(esc).join(sep);
-    }).join('\n');
+    const rows = state.products
+      .map(p => {
+        const provider = state.providers.find(pr => pr.id === p.providerId);
+        return [
+          p.code,
+          p.name,
+          provider?.name || '',
+          Number(p.price ?? 0).toFixed(2),
+          Number(p.cost ?? 0).toFixed(2),
+          Number(p.stock ?? 0),
+          p.unit || 'unidad',
+          p.category || '',
+          Number(p.minStock ?? 0),
+        ]
+          .map(esc)
+          .join(sep);
+      })
+      .join('\n');
 
     const csv = `${header}\n${rows}`;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `productos_${Date.now()}.csv`;
@@ -261,29 +282,31 @@ No encontrados: ${notFound}
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    toast({ title: "CSV generado", description: "Se descargó el archivo." });
+    toast({ title: 'CSV generado', description: 'Se descargó el archivo.' });
   };
 
   const exportTXT = () => {
     const header = 'Código\tNombre\tProveedor\tPrecio\tCosto\tStock\tUnidad\tCategoría\tMinStock';
-    const rows = state.products.map(p => {
-      const provider = state.providers.find(pr => pr.id === p.providerId);
-      return [
-        p.code ?? '',
-        p.name ?? '',
-        provider?.name || '',
-        Number(p.price ?? 0).toFixed(2),
-        Number(p.cost ?? 0).toFixed(2),
-        Number(p.stock ?? 0),
-        p.unit || 'unidad',
-        p.category || '',
-        Number(p.minStock ?? 0)
-      ].join('\t');
-    }).join('\n');
+    const rows = state.products
+      .map(p => {
+        const provider = state.providers.find(pr => pr.id === p.providerId);
+        return [
+          p.code ?? '',
+          p.name ?? '',
+          provider?.name || '',
+          Number(p.price ?? 0).toFixed(2),
+          Number(p.cost ?? 0).toFixed(2),
+          Number(p.stock ?? 0),
+          p.unit || 'unidad',
+          p.category || '',
+          Number(p.minStock ?? 0),
+        ].join('\t');
+      })
+      .join('\n');
 
     const tsv = `${header}\n${rows}`;
     const blob = new Blob([tsv], { type: 'text/plain;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `productos_${Date.now()}.txt`;
@@ -291,18 +314,20 @@ No encontrados: ${notFound}
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    toast({ title: "TXT generado", description: "Se descargó el archivo." });
+    toast({ title: 'TXT generado', description: 'Se descargó el archivo.' });
   };
 
   const exportXLS = () => {
     const table = (headers, rows) => `
       <table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;">
-        <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
+        <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows
+          .map(r => `<tr>${r.map(c => `<td>${c ?? ''}</td>`).join('')}</tr>`)
+          .join('')}</tbody>
       </table>
     `;
 
-    const headers = ['Código','Nombre','Proveedor','Precio','Costo','Stock','Unidad','Categoría','MinStock'];
+    const headers = ['Código', 'Nombre', 'Proveedor', 'Precio', 'Costo', 'Stock', 'Unidad', 'Categoría', 'MinStock'];
     const rows = state.products.map(p => {
       const provider = state.providers.find(pr => pr.id === p.providerId);
       return [
@@ -314,19 +339,18 @@ No encontrados: ${notFound}
         Number(p.stock ?? 0),
         p.unit || 'unidad',
         p.category || '',
-        Number(p.minStock ?? 0)
+        Number(p.minStock ?? 0),
       ];
     });
 
-    const html =
-      `<!doctype html><html><head><meta charset="utf-8"></head><body>
+    const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
         <h2 style="font-size:18px">Productos</h2>
         <div>Generado: ${new Date().toLocaleString()}</div>
         ${table(headers, rows)}
       </body></html>`;
 
     const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `productos_${Date.now()}.xls`;
@@ -334,7 +358,7 @@ No encontrados: ${notFound}
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    toast({ title: "Excel generado", description: "Se descargó el archivo .xls." });
+    toast({ title: 'Excel generado', description: 'Se descargó el archivo .xls.' });
   };
 
   const adjustStock = (productId, adjustment) => {
@@ -342,7 +366,7 @@ No encontrados: ${notFound}
     if (!product) return;
     const newStock = Math.max(0, Number(product.stock || 0) + Number(adjustment || 0));
     dispatch({ type: 'UPDATE_PRODUCT', payload: { id: productId, updates: { stock: newStock } } });
-    toast({ title: "Stock ajustado", description: `${product.name}: ${product.stock} → ${newStock}` });
+    toast({ title: 'Stock ajustado', description: `${product.name}: ${product.stock} → ${newStock}` });
   };
 
   return (
@@ -351,7 +375,6 @@ No encontrados: ${notFound}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Gestión de Productos</h1>
         <div className="flex flex-wrap gap-2">
-          {/* IMPORTAR */}
           <input
             ref={fileInputRef}
             type="file"
@@ -377,7 +400,9 @@ No encontrados: ${notFound}
           {/* NUEVO / EDITAR */}
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={resetForm}><Plus className="h-4 w-4 mr-2" />Nuevo Producto</Button>
+              <Button onClick={resetForm}>
+                <Plus className="h-4 w-4 mr-2" />Nuevo Producto
+              </Button>
             </DialogTrigger>
             <DialogContent className="card-glass border-border max-w-2xl">
               <DialogHeader>
@@ -387,46 +412,23 @@ No encontrados: ${notFound}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="code">Código *</Label>
-                  <Input
-                    id="code"
-                    value={newProduct.code}
-                    onChange={(e) => setNewProduct({ ...newProduct, code: e.target.value })}
-                  />
+                  <Input id="code" value={newProduct.code} onChange={(e) => setNewProduct({ ...newProduct, code: e.target.value })} />
                 </div>
                 <div>
                   <Label htmlFor="name">Nombre *</Label>
-                  <Input
-                    id="name"
-                    value={newProduct.name}
-                    onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                  />
+                  <Input id="name" value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} />
                 </div>
                 <div>
                   <Label htmlFor="price">Precio</Label>
-                  <Input
-                    id="price"
-                    type="number" step="0.01" min="0"
-                    value={newProduct.price}
-                    onChange={(e) => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) || 0 })}
-                  />
+                  <Input id="price" type="text" value={newProduct.price} onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })} />
                 </div>
                 <div>
                   <Label htmlFor="cost">Costo</Label>
-                  <Input
-                    id="cost"
-                    type="number" step="0.01" min="0"
-                    value={newProduct.cost}
-                    onChange={(e) => setNewProduct({ ...newProduct, cost: parseFloat(e.target.value) || 0 })}
-                  />
+                  <Input id="cost" type="text" value={newProduct.cost} onChange={(e) => setNewProduct({ ...newProduct, cost: e.target.value })} />
                 </div>
                 <div>
                   <Label htmlFor="stock">Stock</Label>
-                  <Input
-                    id="stock"
-                    type="number" min="0"
-                    value={newProduct.stock}
-                    onChange={(e) => setNewProduct({ ...newProduct, stock: parseFloat(e.target.value) || 0 })}
-                  />
+                  <Input id="stock" type="number" min="0" value={newProduct.stock} onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })} />
                 </div>
                 <div>
                   <Label htmlFor="unit">Unidad</Label>
@@ -442,23 +444,15 @@ No encontrados: ${notFound}
                 </div>
                 <div>
                   <Label htmlFor="category">Categoría</Label>
-                  <Input
-                    id="category"
-                    value={newProduct.category}
-                    onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
-                    list="categories"
-                  />
+                  <Input id="category" value={newProduct.category} onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })} list="categories" />
                   <datalist id="categories">
                     {categories.map(cat => (<option key={cat} value={cat} />))}
                   </datalist>
                 </div>
                 <div>
                   <Label htmlFor="providerId">Proveedor</Label>
-                  <Select
-                    value={newProduct.providerId}
-                    onValueChange={(value) => setNewProduct({ ...newProduct, providerId: value })}
-                  >
-                    <SelectTrigger><SelectValue placeholder="Seleccionar..."/></SelectTrigger>
+                  <Select value={newProduct.providerId} onValueChange={(value) => setNewProduct({ ...newProduct, providerId: value })}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                     <SelectContent>
                       {state.providers.map(p => (
                         <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
@@ -468,12 +462,7 @@ No encontrados: ${notFound}
                 </div>
                 <div>
                   <Label htmlFor="minStock">Stock mínimo</Label>
-                  <Input
-                    id="minStock"
-                    type="number" min="0"
-                    value={newProduct.minStock}
-                    onChange={(e) => setNewProduct({ ...newProduct, minStock: parseFloat(e.target.value) || 0 })}
-                  />
+                  <Input id="minStock" type="number" min="0" value={newProduct.minStock} onChange={(e) => setNewProduct({ ...newProduct, minStock: e.target.value })} />
                 </div>
               </div>
 
@@ -494,12 +483,7 @@ No encontrados: ${notFound}
       <div className="card-glass p-4 rounded-lg">
         <div className="flex items-center space-x-4">
           <Search className="h-5 w-5 text-primary" />
-          <Input
-            placeholder="Buscar productos..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1"
-          />
+          <Input placeholder="Buscar productos..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="flex-1" />
         </div>
       </div>
 
@@ -509,24 +493,27 @@ No encontrados: ${notFound}
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left text-muted-foreground p-2">Código</th>
-                <th className="text-left text-muted-foreground p-2">Nombre</th>
-                <th className="text-left text-muted-foreground p-2">Proveedor</th>
-                <th className="text-right text-muted-foreground p-2">Precio</th>
-                <th className="text-right text-muted-foreground p-2">Stock</th>
-                <th className="text-right text-muted-foreground p-2">Margen</th>
-                <th className="text-center text-muted-foreground p-2">Acciones</th>
+                <th className="text-left p-2">Código</th>
+                <th className="text-left p-2">Nombre</th>
+                <th className="text-left p-2">Proveedor</th>
+                <th className="text-right p-2">Precio</th>
+                <th className="text-right p-2">Stock</th>
+                <th className="text-right p-2">Margen</th>
+                <th className="text-center p-2">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {filteredProducts.map((product, index) => {
                 const price = Number(product.price ?? 0);
-                const cost  = Number(product.cost ?? 0);
-                const margin = price > 0 ? ((price - cost) / price * 100) : 0;
+                const cost = Number(product.cost ?? 0);
+                const margin = price > 0 ? ((price - cost) / price) * 100 : 0;
                 const stock = Number(product.stock ?? 0);
-                const stockColor = stock <= Number(product.minStock ?? 0)
-                  ? (stock === 0 ? 'text-red-500' : 'text-yellow-500')
-                  : 'text-green-500';
+                const stockColor =
+                  stock <= Number(product.minStock ?? 0)
+                    ? stock === 0
+                      ? 'text-red-500'
+                      : 'text-yellow-500'
+                    : 'text-green-500';
                 const provider = state.providers.find(p => p.id === product.providerId);
 
                 return (
