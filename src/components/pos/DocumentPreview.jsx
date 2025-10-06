@@ -16,7 +16,6 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
 const PRINT_FIX_CSS = `
-/* Ticket de 80mm centrado y con ancho fijo */
 .ticket-80mm {
   width: 80mm;
   max-width: 80mm;
@@ -26,20 +25,17 @@ const PRINT_FIX_CSS = `
 .ticket-80mm .line{ display:flex; justify-content:space-between; gap:8px; }
 .ticket-80mm .cut{ border-top:1px dashed #bbb; margin:6px 0; }
 
-/* A4 centrado para vista previa */
 #a4-wrapper{
   width: 210mm;
   margin: 0 auto;
   background: #fff;
 }
 
-/* Mejoras de impresión */
 @media print {
   @page { size: auto; margin: 6mm; }
   body { background: #fff !important; }
   #a4-wrapper{ width: 210mm; margin: 0 auto; }
   .ticket-80mm{ width: 80mm; margin: 0 auto; }
-  /* Evita que el modal corte el contenido */
   [role="dialog"]{ position: static !important; inset: auto !important; }
 }
 `;
@@ -47,44 +43,51 @@ const PRINT_FIX_CSS = `
 const DocumentPreview = ({
   isOpen,
   onOpenChange,
-  documentType = "sale", // 'sale' | 'remit' | 'quote' | 'credit'
-  sale: saleProp = null,   // reimpresión opcional
-  onConfirm,               // callback al confirmar/emitir
+  documentType = "sale",
+  sale: saleProp = null,
+  onConfirm,
 }) => {
   const { state, processSale, calculateDetail } = usePOS();
   const [isLoading, setIsLoading] = useState(false);
   const [sale, setSale] = useState(saleProp);
   const [pdfUrl, setPdfUrl] = useState(null);
-  const [activeTab, setActiveTab] = useState("A4"); // A4 | 80mm | PDF
+  const [activeTab, setActiveTab] = useState("A4");
 
-  // -------- Helpers de settings/empresa --------
+  // Datos de empresa
   const settings = state?.settings || {};
   const companyName = settings.companyName || "Mi Comercio";
   const companyAddr = settings.address || settings.companyAddress || "";
   const companyPhone = settings.phone || settings.companyPhone || "";
+  const companyEmail = settings.email || "";
   const companyCUIT = settings.cuit || "";
   const companyIVA = settings.ivaCondition || "CF";
   const docCfg = settings.document || {};
-  const watermark = docCfg.watermark || { text: "DOCUMENTO NO VÁLIDO", opacity: 0.08, rotation: -30 };
+  const watermark =
+    docCfg.watermark || { text: "DOCUMENTO NO VÁLIDO", opacity: 0.08, rotation: -30 };
 
-  // -------- Título por tipo --------
   const title = useMemo(() => {
     switch (documentType) {
-      case "sale": return "Factura";
-      case "remit": return "Remito";
-      case "quote": return "Presupuesto";
-      case "credit": return "Nota de crédito";
-      default: return "Documento";
+      case "sale":
+        return "Factura";
+      case "remit":
+        return "Remito";
+      case "quote":
+        return "Presupuesto";
+      case "credit":
+        return "Nota de crédito";
+      default:
+        return "Documento";
     }
   }, [documentType]);
 
-  // -------- Venta activa (prop o local) --------
-  useEffect(() => { setSale(saleProp || null); }, [saleProp]);
+  useEffect(() => {
+    setSale(saleProp || null);
+  }, [saleProp]);
 
-  // -------- PDF URL si ya fue emitida --------
-  useEffect(() => { setPdfUrl(sale?.fiscal?.pdf_url || null); }, [sale, isOpen]);
+  useEffect(() => {
+    setPdfUrl(sale?.fiscal?.pdf_url || null);
+  }, [sale, isOpen]);
 
-  // -------- Totales y items (según flujo) --------
   const computed = useMemo(() => {
     if (sale) {
       return {
@@ -101,14 +104,15 @@ const DocumentPreview = ({
         cae_due: sale?.fiscal?.cae_due_date || null,
       };
     }
-    // Modo preview desde carrito
+
     if (typeof calculateDetail === "function") {
       const d = calculateDetail();
       return {
         items: (state.cart || []).map((it) => ({
           ...it,
           totalPrice:
-            Number(it.price || 0) * Number(it.quantity || 0) - Number(it.itemDiscount || 0),
+            Number(it.price || 0) * Number(it.quantity || 0) -
+            Number(it.itemDiscount || 0),
         })),
         subtotal: Number(d.subtotal || 0),
         itemDiscounts: Number(d.itemDiscounts || 0),
@@ -122,7 +126,7 @@ const DocumentPreview = ({
         cae_due: null,
       };
     }
-    // Fallback
+
     const subtotal = (state.cart || []).reduce(
       (s, it) => s + Number(it.price || 0) * Number(it.quantity || 0),
       0
@@ -139,7 +143,8 @@ const DocumentPreview = ({
       items: (state.cart || []).map((it) => ({
         ...it,
         totalPrice:
-          Number(it.price || 0) * Number(it.quantity || 0) - Number(it.itemDiscount || 0),
+          Number(it.price || 0) * Number(it.quantity || 0) -
+          Number(it.itemDiscount || 0),
       })),
       subtotal,
       itemDiscounts,
@@ -154,13 +159,11 @@ const DocumentPreview = ({
     };
   }, [sale, state, settings, calculateDetail]);
 
-  // -------- Acciones --------
   const handlePrint = () => {
     if (pdfUrl) window.open(pdfUrl, "_blank");
     else window.print();
   };
 
-  // Generación de PDF local si no hay pdfUrl
   const generateLocalPdf = async () => {
     const nodeId = activeTab === "80mm" ? "ticket80" : "docA4";
     const node = document.getElementById(nodeId);
@@ -181,7 +184,6 @@ const DocumentPreview = ({
     const img = canvas.toDataURL("image/png");
 
     if (activeTab === "80mm") {
-      // 80mm ~ 226.77 pt
       const widthPt = 226.77;
       const heightPt = (canvas.height * widthPt) / canvas.width;
       const pdf = new jsPDF({ unit: "pt", format: [widthPt, heightPt] });
@@ -247,7 +249,6 @@ const DocumentPreview = ({
     }
   };
 
-  // -------- Estilos watermark --------
   const showWatermark = computed.training && watermark?.text;
   const watermarkStyle = showWatermark
     ? {
@@ -266,10 +267,8 @@ const DocumentPreview = ({
 
   return (
     <Dialog open={!!isOpen} onOpenChange={onOpenChange}>
-      {/* Inyecto CSS específico para que el ticket quede perfecto */}
       <style>{PRINT_FIX_CSS}</style>
 
-      {/* Modal ancho y alto controlado: scroll dentro del contenido */}
       <DialogContent className="sm:max-w-5xl w-[95vw] max-h-[90vh] p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-4">
           <DialogTitle className="flex items-center justify-between">
@@ -283,7 +282,6 @@ const DocumentPreview = ({
           </DialogTitle>
         </DialogHeader>
 
-        {/* Contenido con scroll, footer siempre visible */}
         <div className="px-6 pb-4 overflow-y-auto" style={{ maxHeight: "calc(90vh - 120px)" }}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <TabsList className="sticky top-0 bg-white/80 backdrop-blur z-10">
@@ -297,16 +295,21 @@ const DocumentPreview = ({
               value="A4"
               className="relative flex-1 overflow-auto bg-white text-black py-6"
             >
-              {/* wrapper con ancho A4 centrado */}
               <div id="a4-wrapper" className="print-area">
                 <div id="docA4" className="px-8">
-                  {/* Encabezado */}
                   <div className="mb-6">
                     <div className="text-2xl font-bold">{companyName}</div>
+                    {(companyAddr || companyPhone) && (
+                      <div className="text-sm">
+                        {companyAddr && <span>{companyAddr}</span>}
+                        {companyAddr && companyPhone && <span> · </span>}
+                        {companyPhone && <span>Tel: {companyPhone}</span>}
+                      </div>
+                    )}
+                    {companyEmail && <div className="text-sm">{companyEmail}</div>}
                     <div className="text-sm">
-                      {companyAddr} · Tel: {companyPhone}
+                      CUIT: {companyCUIT || "—"} · IVA: {companyIVA}
                     </div>
-                    <div className="text-sm">CUIT: {companyCUIT || "—"} · IVA: {companyIVA}</div>
                   </div>
 
                   <div className="mb-4 flex items-center justify-between">
@@ -319,7 +322,9 @@ const DocumentPreview = ({
                     <div className="text-right text-sm">
                       <div>Fecha: {new Date(sale?.timestamp || Date.now()).toLocaleString()}</div>
                       <div>Cliente: {computed.customer?.name || "Consumidor Final"}</div>
-                      {computed.customer?.docNumber && <div>Doc: {computed.customer.docNumber}</div>}
+                      {computed.customer?.docNumber && (
+                        <div>Doc: {computed.customer.docNumber}</div>
+                      )}
                     </div>
                   </div>
 
@@ -386,14 +391,12 @@ const DocumentPreview = ({
                     </div>
                   </div>
 
-                  {/* CAE */}
                   {!computed.training && sale?.fiscal?.cae && (
                     <div className="mt-3 text-[12px]">
                       CAE: {sale.fiscal.cae} · Vto: {sale.fiscal.cae_due_date || "—"}
                     </div>
                   )}
 
-                  {/* QR / Footer legal */}
                   <div className="mt-4 text-xs text-center">
                     {docCfg.legalFooter || ""}
                     {docCfg.showQr && (
@@ -409,7 +412,6 @@ const DocumentPreview = ({
                     )}
                   </div>
 
-                  {/* Watermark entrenamiento */}
                   {computed.training && watermark?.text && (
                     <div style={watermarkStyle}>{watermark.text}</div>
                   )}
@@ -421,8 +423,10 @@ const DocumentPreview = ({
             <TabsContent value="80mm" className="flex-1 overflow-auto bg-white text-black p-4">
               <div id="ticket80" className="ticket-80mm bg-white">
                 <div className="text-center">
-                  <div className="font-bold">{companyName}</div>
-                  <div className="text-xs">{companyAddr}</div>
+                  <div className="font-bold text-sm">{companyName}</div>
+                  {companyAddr && <div className="text-xs">{companyAddr}</div>}
+                  {companyPhone && <div className="text-xs">Tel: {companyPhone}</div>}
+                  {companyEmail && <div className="text-[10px]">{companyEmail}</div>}
                   <div className="text-xs">CUIT: {companyCUIT || "—"} · IVA: {companyIVA}</div>
                 </div>
 
@@ -499,7 +503,6 @@ const DocumentPreview = ({
               </div>
             </TabsContent>
 
-            {/* PDF externo del backend */}
             {pdfUrl && (
               <TabsContent value="PDF" className="flex-1">
                 <iframe src={pdfUrl} title="PDF Factura" className="w-full h-[60vh] border" />
