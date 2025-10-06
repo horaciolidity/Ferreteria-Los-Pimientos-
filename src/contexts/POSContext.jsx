@@ -164,24 +164,27 @@ function posReducer(state, action) {
 
     /* ------ Caja ------ */
     case 'OPEN_CASH_REGISTER':
-      return {
-        ...state,
-        cashRegister: {
-          ...initialState.cashRegister,
-          isOpen: true,
-          openingAmount: Number(action.payload || 0),
-          currentAmount: Number(action.payload || 0),
-          openedAt: new Date().toISOString(),
-          cashFromMixed: 0,
-          movements: [{
-            id: cryptoRandom(),
-            type: 'opening',
-            concept: 'Apertura',
-            amount: Number(action.payload || 0),
-            timestamp: new Date().toISOString(),
-          }],
+  return {
+    ...state,
+    cashRegister: {
+      isOpen: true,
+      openedAt: new Date().toISOString(),
+      openingAmount: Number(action.payload || 0),
+      currentAmount: Number(action.payload || 0),
+      salesByType: { cash: 0, transfer: 0, mixed: 0, credit: 0, card: 0, account: 0 },
+      cashFromMixed: 0,
+      movements: [
+        {
+          id: cryptoRandom(),
+          type: 'opening',
+          concept: 'Apertura',
+          amount: Number(action.payload || 0),
+          timestamp: new Date().toISOString(),
         },
-      };
+      ],
+    },
+  };
+
 
     case 'ADD_CASH_MOVEMENT': {
       if (!state.cashRegister.isOpen) return state;
@@ -200,57 +203,79 @@ function posReducer(state, action) {
       };
     }
 
-    case 'CLOSE_CASH_REGISTER': {
-      const cr = state.cashRegister;
-      const { openingAmount, movements, salesByType, currentAmount, openedAt, cashFromMixed } = cr;
+ case 'CLOSE_CASH_REGISTER': {
+  const cr = state.cashRegister;
+  const { openingAmount, movements, salesByType, currentAmount, openedAt, cashFromMixed } = cr;
 
-      const cashMovements = movements.reduce((acc, m) => {
-        if (m.type === 'income')  return acc + Number(m.amount || 0);
-        if (m.type === 'expense') return acc - Number(m.amount || 0);
-        return acc;
-      }, 0);
+  const cashMovements = movements.reduce((acc, m) => {
+    if (m.type === 'income') return acc + Number(m.amount || 0);
+    if (m.type === 'expense') return acc - Number(m.amount || 0);
+    return acc;
+  }, 0);
 
-      const expectedAmount = Number(openingAmount || 0)
-        + Number(salesByType.cash || 0)
-        + Number(cashFromMixed || 0)
-        + Number(cashMovements || 0);
+  const expectedAmount =
+    Number(openingAmount || 0) +
+    Number(salesByType.cash || 0) +
+    Number(cashFromMixed || 0) +
+    Number(cashMovements || 0);
 
-      const difference = Number(currentAmount || 0) - expectedAmount;
+  const difference = Number(currentAmount || 0) - expectedAmount;
 
-      // Detalle del turno (excluye presupuestos)
-      const inTurn = state.sales.filter(s => openedAt && new Date(s.timestamp) >= new Date(openedAt) && s.type !== 'quote');
-      const subtotalTurno = inTurn.reduce((s, x) => s + Number(x.subtotal || 0) - Number(x.itemDiscounts || 0) - Number(x.discount || 0), 0);
-      const ivaTurno      = inTurn.reduce((s, x) => s + Number(x.taxAmount || 0), 0);
-      const totalTurno    = inTurn.reduce((s, x) => s + Number(x.total || 0), 0);
-      const gananciaNetaTurno = inTurn.reduce((s, x) => s + Number(x.profit || 0), 0);
-      const desgloseMetodo = inTurn.reduce((acc, s) => {
-        const m = s?.payment?.method ?? s?.paymentMethod ?? 'desconocido';
-        acc[m] = (acc[m] || 0) + Number(s.total || 0);
-        return acc;
-      }, {});
+  const inTurn = state.sales.filter(
+    (s) => openedAt && new Date(s.timestamp) >= new Date(openedAt) && s.type !== 'quote'
+  );
 
-      const closure = {
-        ...cr,
-        expectedAmount,
-        difference,
-        closedAt: new Date().toISOString(),
-        subtotalTurno,
-        ivaTurno,
-        totalTurno,
-        gananciaNetaTurno,
-        desgloseMetodo,
-        movements: [
-          ...movements,
-          { id: cryptoRandom(), type: 'closing', concept: 'Cierre', amount: Number(currentAmount || 0), timestamp: new Date().toISOString() },
-        ],
-      };
+  const subtotalTurno = inTurn.reduce(
+    (s, x) => s + Number(x.subtotal || 0) - Number(x.itemDiscounts || 0) - Number(x.discount || 0),
+    0
+  );
+  const ivaTurno = inTurn.reduce((s, x) => s + Number(x.taxAmount || 0), 0);
+  const totalTurno = inTurn.reduce((s, x) => s + Number(x.total || 0), 0);
+  const gananciaNetaTurno = inTurn.reduce((s, x) => s + Number(x.profit || 0), 0);
 
-      return {
-        ...state,
-        cashRegister: { ...initialState.cashRegister },
-        cashClosures: [...state.cashClosures, closure],
-      };
-    }
+  const desgloseMetodo = inTurn.reduce((acc, s) => {
+    const m = s?.payment?.method ?? s?.paymentMethod ?? 'desconocido';
+    acc[m] = (acc[m] || 0) + Number(s.total || 0);
+    return acc;
+  }, {});
+
+  const closure = {
+    ...cr,
+    expectedAmount,
+    difference,
+    closedAt: new Date().toISOString(),
+    subtotalTurno,
+    ivaTurno,
+    totalTurno,
+    gananciaNetaTurno,
+    desgloseMetodo,
+    movements: [
+      ...movements,
+      {
+        id: cryptoRandom(),
+        type: 'closing',
+        concept: 'Cierre',
+        amount: Number(currentAmount || 0),
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  };
+
+  return {
+    ...state,
+    cashClosures: [...state.cashClosures, closure],
+    cashRegister: {
+      isOpen: false,
+      openedAt: null,
+      openingAmount: 0,
+      currentAmount: 0,
+      movements: [],
+      salesByType: { cash: 0, transfer: 0, mixed: 0, credit: 0, card: 0, account: 0 },
+      cashFromMixed: 0,
+    },
+  };
+}
+
 
     /* ------ Ventas ------ */
     case 'SAVE_SALE': {
