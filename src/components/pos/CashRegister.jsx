@@ -1,7 +1,7 @@
 // src/components/pos/CashRegister.jsx
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Lock, Unlock, Printer, History, Plus } from 'lucide-react';
+import { DollarSign, Lock, Unlock, Printer, History, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +10,7 @@ import { usePOS } from '@/contexts/POSContext';
 import { toast } from '@/components/ui/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 
-/* ===================== Diálogo de movimientos ===================== */
+/* ================== Diálogo de movimiento ================== */
 const CashMovementDialog = ({ isOpen, onOpenChange }) => {
   const { dispatch } = usePOS();
   const [amount, setAmount] = useState(0);
@@ -19,24 +19,17 @@ const CashMovementDialog = ({ isOpen, onOpenChange }) => {
 
   const handleAddMovement = () => {
     if (Number(amount) <= 0 || !description.trim()) {
-      toast({
-        title: 'Error',
-        description: 'Monto y descripción son requeridos.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Monto y descripción son requeridos.', variant: 'destructive' });
       return;
     }
-
     dispatch({
       type: 'ADD_CASH_MOVEMENT',
       payload: { type, concept: description.trim(), amount: Number(amount || 0) },
     });
-
     toast({
       title: 'Movimiento agregado',
       description: `Se ${type === 'income' ? 'agregó' : 'retiró'} $${Number(amount).toFixed(2)}.`,
     });
-
     onOpenChange(false);
     setAmount(0);
     setDescription('');
@@ -45,9 +38,7 @@ const CashMovementDialog = ({ isOpen, onOpenChange }) => {
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="glass-effect border-border">
-        <DialogHeader>
-          <DialogTitle>Nuevo Movimiento de Caja</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>Nuevo Movimiento de Caja</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div>
             <Label>Tipo</Label>
@@ -89,16 +80,14 @@ const CashMovementDialog = ({ isOpen, onOpenChange }) => {
             />
           </div>
 
-          <Button onClick={handleAddMovement} className="w-full">
-            Agregar Movimiento
-          </Button>
+          <Button onClick={handleAddMovement} className="w-full">Agregar Movimiento</Button>
         </div>
       </DialogContent>
     </Dialog>
   );
 };
 
-/* ===================== Caja Principal ===================== */
+/* ================== Componente principal ================== */
 export default function CashRegister() {
   const { state, dispatch } = usePOS();
   const [openingAmount, setOpeningAmount] = useState(0);
@@ -112,43 +101,36 @@ export default function CashRegister() {
     movements = [],
     isOpen = false,
     openedAt,
-    cashFromMixed = 0, // parte en efectivo de ventas mixtas
+    cashFromMixed = 0,
   } = cr;
 
-  /* ===================== Totales de ventas ===================== */
   const totalCashSales = Number(salesByType.cash || 0);
   const totalTransferSales = Number(salesByType.transfer || 0);
   const totalMixedSales = Number(salesByType.mixed || 0);
 
-  /* ===================== Movimientos netos ===================== */
+  /* ------------------- Lógica corregida ------------------- */
   const movNet = (movements || []).reduce((acc, mov) => {
+    const concept = (mov.concept || '').toLowerCase();
+    // ignorar movimientos automáticos de ventas o vuelto
+    if (concept.includes('venta') || concept.includes('vuelto')) return acc;
     if (mov.type === 'income') return acc + Number(mov.amount || 0);
     if (mov.type === 'expense') return acc - Number(mov.amount || 0);
     return acc;
   }, 0);
 
-  /* ===================== Cálculos de caja ===================== */
-  // Saldo real esperado por lógica contable (sin intervención del usuario)
-  const computedCurrentAmount = useMemo(() => {
-    return (
-      Number(currentOpening || 0) +
-      Number(totalCashSales || 0) +
-      Number(cashFromMixed || 0) +
-      Number(movNet || 0)
-    );
-  }, [currentOpening, totalCashSales, cashFromMixed, movNet]);
+  const expectedAmount =
+    Number(currentOpening || 0) +
+    Number(totalCashSales || 0) +
+    Number(cashFromMixed || 0) +
+    Number(movNet || 0);
 
-  // Monto esperado (idéntico al saldo real calculado)
-  const expectedAmount = computedCurrentAmount;
-
-  // Diferencia: entre lo que el usuario declara físicamente en caja y lo calculado
   const difference = Number(currentAmount || 0) - Number(expectedAmount || 0);
 
-  /* ===================== Totales del turno ===================== */
+  /* ------------------- Totales del turno ------------------- */
   const salesInTurn = useMemo(() => {
     if (!openedAt) return [];
     const start = new Date(openedAt);
-    return (state.sales || []).filter((s) => {
+    return (state.sales || []).filter(s => {
       if (s.type === 'quote') return false;
       const when = new Date(s.timestamp);
       return when >= start;
@@ -168,34 +150,27 @@ export default function CashRegister() {
     return acc;
   }, {});
 
-  /* ===================== Apertura / Cierre ===================== */
+  /* ------------------- Acciones ------------------- */
   const handleOpenRegister = () => {
     if (Number(openingAmount) <= 0) {
-      toast({
-        title: 'Error',
-        description: 'El monto inicial debe ser mayor a 0.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'El monto inicial debe ser mayor a 0.', variant: 'destructive' });
       return;
     }
     dispatch({ type: 'OPEN_CASH_REGISTER', payload: Number(openingAmount) });
-    toast({
-      title: 'Caja abierta',
-      description: `Caja abierta con un monto inicial de $${Number(openingAmount).toFixed(2)}`,
-    });
+    toast({ title: 'Caja abierta', description: `Caja abierta con un monto inicial de $${Number(openingAmount).toFixed(2)}` });
     setOpeningAmount(0);
   };
 
   const handleCloseRegister = () => {
     if (!isOpen) return;
-    const msg = `
-FÓRMULA:
-Esperado = Monto inicial + Ventas Efectivo + Efectivo de Mixto + Movimientos
+    const msg =
+`FÓRMULA:
+Esperado = Monto inicial + Ventas Efectivo + EFECTIVO de Mixto + Movimientos
 
 Monto inicial: $${Number(currentOpening).toFixed(2)}
 Ventas Efectivo: $${Number(totalCashSales).toFixed(2)}
 Efectivo de Mixto: $${Number(cashFromMixed || 0).toFixed(2)}
-Movimientos: $${Number(movNet).toFixed(2)}
+Movimientos (manuales): $${Number(movNet).toFixed(2)}
 
 Esperado: $${Number(expectedAmount).toFixed(2)}
 Actual:   $${Number(currentAmount).toFixed(2)}
@@ -203,42 +178,32 @@ Diferencia: $${Number(difference).toFixed(2)}
 
 ¿Confirmar cierre de caja?`;
     if (window.confirm(msg)) {
-      dispatch({
-        type: 'CLOSE_CASH_REGISTER',
-        payload: { currentAmount: computedCurrentAmount },
-      });
-      toast({
-        title: 'Caja cerrada',
-        description: `Caja cerrada con un monto final de $${Number(
-          computedCurrentAmount
-        ).toFixed(2)}`,
-      });
+      dispatch({ type: 'CLOSE_CASH_REGISTER' });
+      toast({ title: 'Caja cerrada', description: `Caja cerrada con un monto final de $${Number(currentAmount).toFixed(2)}` });
     }
   };
 
-  /* ===================== Impresión de cierre ===================== */
+  /* ------------------- Imprimir cierre ------------------- */
   const printReport = (closure) => {
     const w = window.open('', '_blank', 'width=900,height=700');
     if (!w) {
-      toast({
-        title: 'Pop-up bloqueado',
-        description: 'Permití ventanas emergentes para imprimir.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Pop-up bloqueado', description: 'Permití ventanas emergentes para imprimir.', variant: 'destructive' });
       return;
     }
     const style = `
       <style>
-        body{font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:24px;color:#111}
+        body{font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:24px; color:#111}
         h1{font-size:20px;margin:0 0 8px}
-        table{width:100%;border-collapse:collapse;font-size:12px}
-        th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:left}
+        table{width:100%; border-collapse: collapse; font-size:12px}
+        th,td{border-bottom:1px solid #ddd; padding:6px 8px; text-align:left}
         th{background:#f6f6f6}
         .right{text-align:right}
       </style>
     `;
     const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
     const movNetClosure = (closure.movements || []).reduce((a, m) => {
+      const concept = (m.concept || '').toLowerCase();
+      if (concept.includes('venta') || concept.includes('vuelto')) return a;
       if (m.type === 'income') return a + Number(m.amount || 0);
       if (m.type === 'expense') return a - Number(m.amount || 0);
       return a;
@@ -251,7 +216,7 @@ Diferencia: $${Number(difference).toFixed(2)}
           Cerrada: ${new Date(closure.closedAt).toLocaleString()}
         </p>
         <table>
-          <tr><th>Inicial</th><th>Ventas Efectivo</th><th>Mov. Neto</th><th>Esperado</th><th>Actual</th><th>Diferencia</th></tr>
+          <tr><th>Inicial</th><th>Ventas Efectivo</th><th>Mov. Manuales</th><th>Esperado</th><th>Actual</th><th>Diferencia</th></tr>
           <tr>
             <td class="right">${fmt(closure.openingAmount)}</td>
             <td class="right">${fmt(closure.salesByType?.cash || 0)}</td>
@@ -268,7 +233,7 @@ Diferencia: $${Number(difference).toFixed(2)}
     w.onload = () => w.print();
   };
 
-  /* ===================== Render ===================== */
+  /* ------------------- Render ------------------- */
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Gestión de Caja</h1>
@@ -291,8 +256,7 @@ Diferencia: $${Number(difference).toFixed(2)}
                   </div>
                 </div>
                 <Button size="sm" onClick={() => setIsMovementDialogOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Movimiento
+                  <Plus className="h-4 w-4 mr-2" />Movimiento
                 </Button>
               </div>
 
@@ -318,12 +282,8 @@ Diferencia: $${Number(difference).toFixed(2)}
                   <span className="font-medium">${Number(cashFromMixed || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Movimientos</span>
-                  <span
-                    className={`font-medium ${
-                      movNet >= 0 ? 'text-green-500' : 'text-red-500'
-                    }`}
-                  >
+                  <span>Movimientos (manuales)</span>
+                  <span className={`font-medium ${movNet >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                     ${Number(movNet).toFixed(2)}
                   </span>
                 </div>
@@ -334,7 +294,7 @@ Diferencia: $${Number(difference).toFixed(2)}
                 </div>
                 <div className="flex justify-between text-foreground text-2xl font-bold">
                   <span>Monto Actual (Efectivo)</span>
-                  <span>${Number(computedCurrentAmount).toFixed(2)}</span>
+                  <span>${Number(currentAmount).toFixed(2)}</span>
                 </div>
                 <div
                   className={`flex justify-between text-lg font-semibold ${
@@ -345,7 +305,7 @@ Diferencia: $${Number(difference).toFixed(2)}
                   <span>${Number(difference).toFixed(2)}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Fórmula: inicial + ventas efectivo + efectivo de mixto + movimientos
+                  Fórmula: inicial + ventas efectivo + efectivo de mixto + movimientos manuales
                 </p>
               </div>
 
@@ -353,8 +313,7 @@ Diferencia: $${Number(difference).toFixed(2)}
                 onClick={handleCloseRegister}
                 className="w-full bg-red-600 hover:bg-red-700 h-12 text-base"
               >
-                <Lock className="h-4 w-4 mr-2" />
-                Cerrar Caja
+                <Lock className="h-4 w-4 mr-2" />Cerrar Caja
               </Button>
             </div>
           ) : (
@@ -365,10 +324,7 @@ Diferencia: $${Number(difference).toFixed(2)}
                   <p className="text-lg font-medium text-red-500">Caja Cerrada</p>
                   {state.cashClosures.length > 0 && (
                     <p className="text-sm text-muted-foreground">
-                      Último cierre:{' '}
-                      {new Date(
-                        state.cashClosures[state.cashClosures.length - 1].closedAt
-                      ).toLocaleString()}
+                      Último cierre: {new Date(state.cashClosures[state.cashClosures.length - 1].closedAt).toLocaleString()}
                     </p>
                   )}
                 </div>
@@ -390,8 +346,7 @@ Diferencia: $${Number(difference).toFixed(2)}
                 onClick={handleOpenRegister}
                 className="w-full bg-green-600 hover:bg-green-700 h-12 text-base"
               >
-                <Unlock className="h-4 w-4 mr-2" />
-                Abrir Caja
+                <Unlock className="h-4 w-4 mr-2" />Abrir Caja
               </Button>
             </div>
           )}
@@ -401,9 +356,7 @@ Diferencia: $${Number(difference).toFixed(2)}
         <div className="card-glass p-6 rounded-lg">
           <h2 className="text-xl font-semibold mb-4">Totales del Turno</h2>
           {!isOpen ? (
-            <p className="text-muted-foreground">
-              Abrí la caja para empezar un turno y ver sus totales.
-            </p>
+            <p className="text-muted-foreground">Abrí la caja para empezar un turno y ver sus totales.</p>
           ) : (
             <div className="space-y-2 text-base">
               <div className="flex justify-between">
@@ -420,9 +373,7 @@ Diferencia: $${Number(difference).toFixed(2)}
               </div>
               <div className="flex justify-between">
                 <span>Ganancia Neta</span>
-                <span className="font-medium text-green-600">
-                  ${Number(gananciaTurno).toFixed(2)}
-                </span>
+                <span className="font-medium text-green-600">${Number(gananciaTurno).toFixed(2)}</span>
               </div>
 
               <div className="mt-3">
@@ -449,11 +400,10 @@ Diferencia: $${Number(difference).toFixed(2)}
         </div>
       </div>
 
-      {/* Historial de Cierres */}
+      {/* Historial de cierres */}
       <div className="card-glass p-6 rounded-lg">
         <h2 className="text-xl font-semibold mb-4 flex items-center">
-          <History className="mr-2 h-5 w-5" />
-          Historial de Cierres
+          <History className="mr-2 h-5 w-5" />Historial de Cierres
         </h2>
         <div className="overflow-y-auto max-h-96 scrollbar-thin space-y-3">
           {state.cashClosures.length === 0 ? (
@@ -464,46 +414,36 @@ Diferencia: $${Number(difference).toFixed(2)}
                 key={i}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="bg-background/50 p-3 rounded-lg text-sm"
+                className="bg-background/50 p-3 rounded-lg text-sm flex justify-between items-center"
               >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="font-semibold">
-                      {new Date(closure.closedAt).toLocaleDateString()}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {new Date(closure.openedAt).toLocaleTimeString()} -{' '}
-                      {new Date(closure.closedAt).toLocaleTimeString()}
-                    </p>
-                  </div>
-                  <div
-                    className={`font-bold ${
-                      Number(closure.difference || 0) === 0
-                        ? 'text-green-500'
-                        : 'text-red-500'
-                    }`}
-                  >
-                    Dif: ${Number(closure.difference || 0).toFixed(2)}
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => printReport(closure)}
-                    className="h-8 w-8 text-muted-foreground"
-                  >
-                    <Printer size={16} />
-                  </Button>
+                <div>
+                  <p className="font-semibold">{new Date(closure.closedAt).toLocaleDateString()}</p>
+                  <p className="text-muted-foreground">
+                    {new Date(closure.openedAt).toLocaleTimeString()} - {new Date(closure.closedAt).toLocaleTimeString()}
+                  </p>
                 </div>
+                <div
+                  className={`font-bold ${
+                    Number(closure.difference || 0) === 0 ? 'text-green-500' : 'text-red-500'
+                  }`}
+                >
+                  Dif: ${Number(closure.difference || 0).toFixed(2)}
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => printReport(closure)}
+                  className="h-8 w-8 text-muted-foreground"
+                >
+                  <Printer size={16} />
+                </Button>
               </motion.div>
             ))
           )}
         </div>
       </div>
 
-      <CashMovementDialog
-        isOpen={isMovementDialogOpen}
-        onOpenChange={setIsMovementDialogOpen}
-      />
+      <CashMovementDialog isOpen={isMovementDialogOpen} onOpenChange={setIsMovementDialogOpen} />
     </div>
   );
 }
