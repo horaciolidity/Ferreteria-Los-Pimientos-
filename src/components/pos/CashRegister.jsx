@@ -1,7 +1,9 @@
 // src/components/pos/CashRegister.jsx
 import React, { useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
-import { DollarSign, Lock, Unlock, Printer, History, Plus } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  DollarSign, Lock, Unlock, Printer, History, Plus, ChevronDown, ChevronUp,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,7 +26,12 @@ const CashMovementDialog = ({ isOpen, onOpenChange }) => {
     }
     dispatch({
       type: 'ADD_CASH_MOVEMENT',
-      payload: { type, concept: description.trim(), amount: Number(amount || 0) },
+      payload: {
+        type,
+        concept: description.trim(),
+        amount: Number(amount || 0),
+        timestamp: new Date().toISOString(),
+      },
     });
     toast({
       title: 'Movimiento agregado',
@@ -92,6 +99,7 @@ export default function CashRegister() {
   const { state, dispatch } = usePOS();
   const [openingAmount, setOpeningAmount] = useState(0);
   const [isMovementDialogOpen, setIsMovementDialogOpen] = useState(false);
+  const [expandedClosure, setExpandedClosure] = useState(null);
 
   const cr = state.cashRegister || {};
   const {
@@ -111,7 +119,6 @@ export default function CashRegister() {
   /* ------------------- Lógica corregida ------------------- */
   const movNet = (movements || []).reduce((acc, mov) => {
     const concept = (mov.concept || '').toLowerCase();
-    // ignorar movimientos automáticos de ventas o vuelto
     if (concept.includes('venta') || concept.includes('vuelto')) return acc;
     if (mov.type === 'income') return acc + Number(mov.amount || 0);
     if (mov.type === 'expense') return acc - Number(mov.amount || 0);
@@ -137,13 +144,13 @@ export default function CashRegister() {
     });
   }, [state.sales, openedAt]);
 
-  const subtotalTurno = salesInTurn.reduce(
-    (s, x) => s + Number(x.subtotal || 0) - Number(x.itemDiscounts || 0) - Number(x.discount || 0),
-    0
-  );
+  const subtotalTurno = salesInTurn.reduce((s, x) => s + Number(x.subtotal || 0), 0);
   const ivaTurno = salesInTurn.reduce((s, x) => s + Number(x.taxAmount || x.tax || 0), 0);
   const totalTurno = salesInTurn.reduce((s, x) => s + Number(x.total || 0), 0);
   const gananciaTurno = salesInTurn.reduce((s, x) => s + Number(x.profit || 0), 0);
+  const cantidadVentas = salesInTurn.length;
+  const promGanancia = cantidadVentas > 0 ? gananciaTurno / cantidadVentas : 0;
+
   const desgloseMetodo = salesInTurn.reduce((acc, s) => {
     const m = s?.payment?.method ?? s?.paymentMethod ?? 'desconocido';
     acc[m] = (acc[m] || 0) + Number(s.total || 0);
@@ -163,74 +170,18 @@ export default function CashRegister() {
 
   const handleCloseRegister = () => {
     if (!isOpen) return;
-    const msg =
-`FÓRMULA:
-Esperado = Monto inicial + Ventas Efectivo + EFECTIVO de Mixto + Movimientos
-
-Monto inicial: $${Number(currentOpening).toFixed(2)}
-Ventas Efectivo: $${Number(totalCashSales).toFixed(2)}
-Efectivo de Mixto: $${Number(cashFromMixed || 0).toFixed(2)}
-Movimientos (manuales): $${Number(movNet).toFixed(2)}
-
-Esperado: $${Number(expectedAmount).toFixed(2)}
-Actual:   $${Number(currentAmount).toFixed(2)}
-Diferencia: $${Number(difference).toFixed(2)}
-
-¿Confirmar cierre de caja?`;
-    if (window.confirm(msg)) {
-      dispatch({ type: 'CLOSE_CASH_REGISTER' });
-      toast({ title: 'Caja cerrada', description: `Caja cerrada con un monto final de $${Number(currentAmount).toFixed(2)}` });
-    }
-  };
-
-  /* ------------------- Imprimir cierre ------------------- */
-  const printReport = (closure) => {
-    const w = window.open('', '_blank', 'width=900,height=700');
-    if (!w) {
-      toast({ title: 'Pop-up bloqueado', description: 'Permití ventanas emergentes para imprimir.', variant: 'destructive' });
-      return;
-    }
-    const style = `
-      <style>
-        body{font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:24px; color:#111}
-        h1{font-size:20px;margin:0 0 8px}
-        table{width:100%; border-collapse: collapse; font-size:12px}
-        th,td{border-bottom:1px solid #ddd; padding:6px 8px; text-align:left}
-        th{background:#f6f6f6}
-        .right{text-align:right}
-      </style>
-    `;
-    const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
-    const movNetClosure = (closure.movements || []).reduce((a, m) => {
-      const concept = (m.concept || '').toLowerCase();
-      if (concept.includes('venta') || concept.includes('vuelto')) return a;
-      if (m.type === 'income') return a + Number(m.amount || 0);
-      if (m.type === 'expense') return a - Number(m.amount || 0);
-      return a;
-    }, 0);
-    const html = `
-      <!doctype html><html><head><meta charset="utf-8"><title>Cierre de Caja</title>${style}</head><body>
-        <h1>Cierre de Caja</h1>
-        <p>
-          Abierta: ${new Date(closure.openedAt).toLocaleString()}<br/>
-          Cerrada: ${new Date(closure.closedAt).toLocaleString()}
-        </p>
-        <table>
-          <tr><th>Inicial</th><th>Ventas Efectivo</th><th>Mov. Manuales</th><th>Esperado</th><th>Actual</th><th>Diferencia</th></tr>
-          <tr>
-            <td class="right">${fmt(closure.openingAmount)}</td>
-            <td class="right">${fmt(closure.salesByType?.cash || 0)}</td>
-            <td class="right">${fmt(movNetClosure)}</td>
-            <td class="right">${fmt(closure.expectedAmount)}</td>
-            <td class="right">${fmt(closure.currentAmount)}</td>
-            <td class="right">${fmt(closure.difference)}</td>
-          </tr>
-        </table>
-      </body></html>`;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.onload = () => w.print();
+    const closure = {
+      openedAt,
+      closedAt: new Date().toISOString(),
+      openingAmount: currentOpening,
+      salesByType,
+      currentAmount,
+      expectedAmount,
+      difference,
+      movements,
+    };
+    dispatch({ type: 'CLOSE_CASH_REGISTER', payload: closure });
+    toast({ title: 'Caja cerrada', description: `Caja cerrada con un monto final de $${Number(currentAmount).toFixed(2)}` });
   };
 
   /* ------------------- Render ------------------- */
@@ -244,15 +195,13 @@ Diferencia: $${Number(difference).toFixed(2)}
           <h2 className="text-xl font-semibold mb-4">Estado de Caja</h2>
 
           {isOpen ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            <>
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center space-x-3">
                   <Unlock className="h-8 w-8 text-green-500" />
                   <div>
                     <p className="text-lg font-medium text-green-500">Caja Abierta</p>
-                    <p className="text-sm text-muted-foreground">
-                      Abierta el: {openedAt ? new Date(openedAt).toLocaleString() : '-'}
-                    </p>
+                    <p className="text-sm text-muted-foreground">Abierta el: {new Date(openedAt).toLocaleString()}</p>
                   </div>
                 </div>
                 <Button size="sm" onClick={() => setIsMovementDialogOpen(true)}>
@@ -260,74 +209,46 @@ Diferencia: $${Number(difference).toFixed(2)}
                 </Button>
               </div>
 
-              <div className="space-y-2 text-base">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Monto Inicial</span>
-                  <span className="font-medium">${Number(currentOpening).toFixed(2)}</span>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span>Monto Inicial</span><span>${currentOpening.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span>Ventas Efectivo</span><span>${totalCashSales.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span>Mixto (efectivo)</span><span>${cashFromMixed.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span>Movimientos manuales</span><span>${movNet.toFixed(2)}</span></div>
+                <div className="flex justify-between font-semibold border-t pt-2"><span>Esperado</span><span>${expectedAmount.toFixed(2)}</span></div>
+                <div className="flex justify-between font-bold text-lg"><span>Actual</span><span>${currentAmount.toFixed(2)}</span></div>
+                <div className={`flex justify-between font-semibold ${difference === 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  <span>Diferencia</span><span>${difference.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Ventas (Efectivo)</span>
-                  <span className="font-medium">${Number(totalCashSales).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Ventas (Transf.)</span>
-                  <span className="font-medium">${Number(totalTransferSales).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Ventas (Mixto - Total)</span>
-                  <span className="font-medium">${Number(totalMixedSales).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Mixto (Parte en efectivo)</span>
-                  <span className="font-medium">${Number(cashFromMixed || 0).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Movimientos (manuales)</span>
-                  <span className={`font-medium ${movNet >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    ${Number(movNet).toFixed(2)}
-                  </span>
-                </div>
-
-                <div className="flex justify-between text-foreground text-lg font-bold border-t border-border pt-2 mt-2">
-                  <span>Monto Esperado (Efectivo)</span>
-                  <span>${Number(expectedAmount).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-foreground text-2xl font-bold">
-                  <span>Monto Actual (Efectivo)</span>
-                  <span>${Number(currentAmount).toFixed(2)}</span>
-                </div>
-                <div
-                  className={`flex justify-between text-lg font-semibold ${
-                    Number(difference) === 0 ? 'text-green-600' : 'text-red-600'
-                  }`}
-                >
-                  <span>Diferencia</span>
-                  <span>${Number(difference).toFixed(2)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Fórmula: inicial + ventas efectivo + efectivo de mixto + movimientos manuales
-                </p>
               </div>
 
-              <Button
-                onClick={handleCloseRegister}
-                className="w-full bg-red-600 hover:bg-red-700 h-12 text-base"
-              >
+              {/* Lista de movimientos */}
+              <div className="mt-4">
+                <h3 className="font-semibold mb-2 flex items-center"><DollarSign className="mr-2 h-4 w-4" />Movimientos</h3>
+                {movements.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay movimientos manuales aún.</p>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {[...movements].reverse().map((m, i) => (
+                      <div key={i} className="flex justify-between bg-background/50 rounded px-2 py-1 text-sm">
+                        <span>{m.concept}</span>
+                        <span className={m.type === 'income' ? 'text-green-500' : 'text-red-500'}>
+                          {m.type === 'income' ? '+' : '-'}${m.amount.toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Button className="w-full bg-red-600 mt-5" onClick={handleCloseRegister}>
                 <Lock className="h-4 w-4 mr-2" />Cerrar Caja
               </Button>
-            </div>
+            </>
           ) : (
             <div className="space-y-4">
               <div className="flex items-center space-x-3">
                 <Lock className="h-8 w-8 text-red-500" />
-                <div>
-                  <p className="text-lg font-medium text-red-500">Caja Cerrada</p>
-                  {state.cashClosures.length > 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      Último cierre: {new Date(state.cashClosures[state.cashClosures.length - 1].closedAt).toLocaleString()}
-                    </p>
-                  )}
-                </div>
+                <p className="text-lg text-red-500">Caja Cerrada</p>
               </div>
               <div>
                 <Label htmlFor="openingAmount">Monto Inicial</Label>
@@ -335,17 +256,11 @@ Diferencia: $${Number(difference).toFixed(2)}
                   id="openingAmount"
                   type="number"
                   step="0.01"
-                  min="0"
                   value={openingAmount}
                   onChange={(e) => setOpeningAmount(parseFloat(e.target.value) || 0)}
-                  className="h-12 text-lg"
-                  placeholder="0.00"
                 />
               </div>
-              <Button
-                onClick={handleOpenRegister}
-                className="w-full bg-green-600 hover:bg-green-700 h-12 text-base"
-              >
+              <Button className="w-full bg-green-600" onClick={handleOpenRegister}>
                 <Unlock className="h-4 w-4 mr-2" />Abrir Caja
               </Button>
             </div>
@@ -355,45 +270,23 @@ Diferencia: $${Number(difference).toFixed(2)}
         {/* Totales del turno */}
         <div className="card-glass p-6 rounded-lg">
           <h2 className="text-xl font-semibold mb-4">Totales del Turno</h2>
-          {!isOpen ? (
-            <p className="text-muted-foreground">Abrí la caja para empezar un turno y ver sus totales.</p>
+          {salesInTurn.length === 0 ? (
+            <p className="text-muted-foreground">No hay ventas aún.</p>
           ) : (
-            <div className="space-y-2 text-base">
-              <div className="flex justify-between">
-                <span>Subtotal (sin IVA)</span>
-                <span className="font-medium">${Number(subtotalTurno).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>IVA</span>
-                <span className="font-medium">${Number(ivaTurno).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Total</span>
-                <span className="font-medium">${Number(totalTurno).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Ganancia Neta</span>
-                <span className="font-medium text-green-600">${Number(gananciaTurno).toFixed(2)}</span>
-              </div>
-
-              <div className="mt-3">
-                <p className="text-sm text-muted-foreground mb-1">
-                  Desglose por método (total ventas)
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(desgloseMetodo).map(([m, v]) => (
-                    <div
-                      key={m}
-                      className="flex justify-between bg-background/50 rounded px-3 py-2 text-sm"
-                    >
-                      <span className="capitalize">{m}</span>
-                      <span className="font-medium">${Number(v).toFixed(2)}</span>
-                    </div>
-                  ))}
-                  {Object.keys(desgloseMetodo).length === 0 && (
-                    <div className="text-muted-foreground text-sm">Sin ventas aún.</div>
-                  )}
-                </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between"><span>Ventas totales</span><span>{cantidadVentas}</span></div>
+              <div className="flex justify-between"><span>Subtotal</span><span>${subtotalTurno.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>IVA</span><span>${ivaTurno.toFixed(2)}</span></div>
+              <div className="flex justify-between font-semibold"><span>Total</span><span>${totalTurno.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>Ganancia Neta</span><span className="text-green-500">${gananciaTurno.toFixed(2)}</span></div>
+              <div className="flex justify-between text-xs text-muted-foreground"><span>Promedio por venta</span><span>${promGanancia.toFixed(2)}</span></div>
+              <div className="border-t mt-2 pt-2">
+                <p className="text-sm font-semibold mb-1">Desglose por método:</p>
+                {Object.entries(desgloseMetodo).map(([m, v]) => (
+                  <div key={m} className="flex justify-between">
+                    <span className="capitalize">{m}</span><span>${v.toFixed(2)}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -402,45 +295,73 @@ Diferencia: $${Number(difference).toFixed(2)}
 
       {/* Historial de cierres */}
       <div className="card-glass p-6 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4 flex items-center">
+        <h2 className="text-xl font-semibold mb-3 flex items-center">
           <History className="mr-2 h-5 w-5" />Historial de Cierres
         </h2>
-        <div className="overflow-y-auto max-h-96 scrollbar-thin space-y-3">
-          {state.cashClosures.length === 0 ? (
-            <p className="text-muted-foreground text-center pt-8">No hay cierres de caja.</p>
-          ) : (
-            [...state.cashClosures].reverse().map((closure, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="bg-background/50 p-3 rounded-lg text-sm flex justify-between items-center"
-              >
-                <div>
-                  <p className="font-semibold">{new Date(closure.closedAt).toLocaleDateString()}</p>
-                  <p className="text-muted-foreground">
-                    {new Date(closure.openedAt).toLocaleTimeString()} - {new Date(closure.closedAt).toLocaleTimeString()}
-                  </p>
+        {state.cashClosures.length === 0 ? (
+          <p className="text-muted-foreground">No hay cierres registrados.</p>
+        ) : (
+          <div className="space-y-3">
+            {[...state.cashClosures].reverse().map((closure, i) => {
+              const expanded = expandedClosure === i;
+              return (
+                <div key={i} className="bg-background/50 p-3 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="font-semibold">{new Date(closure.closedAt).toLocaleDateString()}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(closure.openedAt).toLocaleTimeString()} - {new Date(closure.closedAt).toLocaleTimeString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className={`font-bold ${closure.difference === 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        Dif: ${closure.difference.toFixed(2)}
+                      </span>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setExpandedClosure(expanded ? null : i)}
+                      >
+                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <AnimatePresence>
+                    {expanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="mt-2 border-t pt-2 text-xs space-y-1"
+                      >
+                        <div>Inicial: ${closure.openingAmount.toFixed(2)}</div>
+                        <div>Efectivo: ${closure.salesByType?.cash?.toFixed(2)}</div>
+                        <div>Transferencias: ${closure.salesByType?.transfer?.toFixed(2)}</div>
+                        <div>Mixto: ${closure.salesByType?.mixed?.toFixed(2)}</div>
+                        <div>Esperado: ${closure.expectedAmount.toFixed(2)}</div>
+                        <div>Actual: ${closure.currentAmount.toFixed(2)}</div>
+                        <div className="font-semibold border-t pt-1 mt-1">Movimientos:</div>
+                        {closure.movements?.length > 0 ? (
+                          closure.movements.map((m, j) => (
+                            <div key={j} className="flex justify-between">
+                              <span>{m.concept}</span>
+                              <span className={m.type === 'income' ? 'text-green-500' : 'text-red-500'}>
+                                {m.type === 'income' ? '+' : '-'}${m.amount.toFixed(2)}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-muted-foreground">Sin movimientos manuales.</div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-                <div
-                  className={`font-bold ${
-                    Number(closure.difference || 0) === 0 ? 'text-green-500' : 'text-red-500'
-                  }`}
-                >
-                  Dif: ${Number(closure.difference || 0).toFixed(2)}
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => printReport(closure)}
-                  className="h-8 w-8 text-muted-foreground"
-                >
-                  <Printer size={16} />
-                </Button>
-              </motion.div>
-            ))
-          )}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <CashMovementDialog isOpen={isMovementDialogOpen} onOpenChange={setIsMovementDialogOpen} />
