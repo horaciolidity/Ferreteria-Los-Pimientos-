@@ -1,4 +1,3 @@
-// src/components/pos/CashRegister.jsx
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -21,7 +20,11 @@ const CashMovementDialog = ({ isOpen, onOpenChange }) => {
 
   const handleAddMovement = () => {
     if (Number(amount) <= 0 || !description.trim()) {
-      toast({ title: 'Error', description: 'Monto y descripción son requeridos.', variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: 'Monto y descripción son requeridos.',
+        variant: 'destructive',
+      });
       return;
     }
     dispatch({
@@ -87,7 +90,9 @@ const CashMovementDialog = ({ isOpen, onOpenChange }) => {
             />
           </div>
 
-          <Button onClick={handleAddMovement} className="w-full">Agregar Movimiento</Button>
+          <Button onClick={handleAddMovement} className="w-full">
+            Agregar Movimiento
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -104,7 +109,7 @@ export default function CashRegister() {
   const cr = state.cashRegister || {};
   const {
     openingAmount: currentOpening = 0,
-    salesByType = { cash: 0, transfer: 0, mixed: 0, credit: 0, card: 0, account: 0 },
+    salesByType = { cash: 0, transfer: 0, mixed: 0 },
     currentAmount = 0,
     movements = [],
     isOpen = false,
@@ -116,7 +121,7 @@ export default function CashRegister() {
   const totalTransferSales = Number(salesByType.transfer || 0);
   const totalMixedSales = Number(salesByType.mixed || 0);
 
-  /* ------------------- Lógica corregida ------------------- */
+  /* ------------------- Lógica principal ------------------- */
   const movNet = (movements || []).reduce((acc, mov) => {
     const concept = (mov.concept || '').toLowerCase();
     if (concept.includes('venta') || concept.includes('vuelto')) return acc;
@@ -137,7 +142,7 @@ export default function CashRegister() {
   const salesInTurn = useMemo(() => {
     if (!openedAt) return [];
     const start = new Date(openedAt);
-    return (state.sales || []).filter(s => {
+    return (state.sales || []).filter((s) => {
       if (s.type === 'quote') return false;
       const when = new Date(s.timestamp);
       return when >= start;
@@ -157,14 +162,81 @@ export default function CashRegister() {
     return acc;
   }, {});
 
+  /* ------------------- Función para imprimir ------------------- */
+  const printReport = (closure) => {
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (!w) {
+      toast({
+        title: 'Pop-up bloqueado',
+        description: 'Permití ventanas emergentes para imprimir.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const style = `
+      <style>
+        body{font-family: Arial, sans-serif; margin:24px; color:#111;}
+        h1{font-size:18px; margin-bottom:6px;}
+        table{width:100%; border-collapse: collapse; margin-top:10px;}
+        th,td{border:1px solid #ddd; padding:6px; text-align:right;}
+        th{text-align:left; background:#f8f8f8;}
+        .green{color:#16a34a;}
+        .red{color:#dc2626;}
+      </style>
+    `;
+
+    const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
+
+    const html = `
+      <!doctype html><html><head><meta charset="utf-8"><title>Cierre de Caja</title>${style}</head><body>
+      <h1>Cierre de Caja</h1>
+      <p>Abierta: ${new Date(closure.openedAt).toLocaleString()}<br/>
+      Cerrada: ${new Date(closure.closedAt).toLocaleString()}</p>
+      <table>
+        <tr><th>Inicial</th><th>Ventas Efectivo</th><th>Mov. Manuales</th><th>Esperado</th><th>Actual</th><th>Diferencia</th></tr>
+        <tr>
+          <td>${fmt(closure.openingAmount)}</td>
+          <td>${fmt(closure.salesByType?.cash || 0)}</td>
+          <td>${fmt(closure.movements?.reduce((a,m)=>a+(m.type==='income'?m.amount:-m.amount),0) || 0)}</td>
+          <td>${fmt(closure.expectedAmount)}</td>
+          <td>${fmt(closure.currentAmount)}</td>
+          <td class="${closure.difference===0?'green':'red'}">${fmt(closure.difference)}</td>
+        </tr>
+      </table>
+      <h3>Movimientos</h3>
+      ${closure.movements?.length
+        ? `<ul>${closure.movements
+            .map(
+              (m) =>
+                `<li>${m.concept}: <strong class="${
+                  m.type === 'income' ? 'green' : 'red'
+                }">${m.type === 'income' ? '+' : '-'}${fmt(m.amount)}</strong></li>`
+            )
+            .join('')}</ul>`
+        : '<p>Sin movimientos manuales.</p>'}
+      </body></html>
+    `;
+    w.document.write(html);
+    w.document.close();
+    w.onload = () => w.print();
+  };
+
   /* ------------------- Acciones ------------------- */
   const handleOpenRegister = () => {
     if (Number(openingAmount) <= 0) {
-      toast({ title: 'Error', description: 'El monto inicial debe ser mayor a 0.', variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: 'El monto inicial debe ser mayor a 0.',
+        variant: 'destructive',
+      });
       return;
     }
     dispatch({ type: 'OPEN_CASH_REGISTER', payload: Number(openingAmount) });
-    toast({ title: 'Caja abierta', description: `Caja abierta con un monto inicial de $${Number(openingAmount).toFixed(2)}` });
+    toast({
+      title: 'Caja abierta',
+      description: `Caja abierta con un monto inicial de $${Number(openingAmount).toFixed(2)}`,
+    });
     setOpeningAmount(0);
   };
 
@@ -181,7 +253,10 @@ export default function CashRegister() {
       movements,
     };
     dispatch({ type: 'CLOSE_CASH_REGISTER', payload: closure });
-    toast({ title: 'Caja cerrada', description: `Caja cerrada con un monto final de $${Number(currentAmount).toFixed(2)}` });
+    toast({
+      title: 'Caja cerrada',
+      description: `Caja cerrada con un monto final de $${Number(currentAmount).toFixed(2)}`,
+    });
   };
 
   /* ------------------- Render ------------------- */
@@ -201,7 +276,9 @@ export default function CashRegister() {
                   <Unlock className="h-8 w-8 text-green-500" />
                   <div>
                     <p className="text-lg font-medium text-green-500">Caja Abierta</p>
-                    <p className="text-sm text-muted-foreground">Abierta el: {new Date(openedAt).toLocaleString()}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Abierta el: {new Date(openedAt).toLocaleString()}
+                    </p>
                   </div>
                 </div>
                 <Button size="sm" onClick={() => setIsMovementDialogOpen(true)}>
@@ -314,9 +391,9 @@ export default function CashRegister() {
                       </p>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <span className={`font-bold ${closure.difference === 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        Dif: ${closure.difference.toFixed(2)}
-                      </span>
+                      <Button size="icon" variant="ghost" onClick={() => printReport(closure)}>
+                        <Printer size={16} />
+                      </Button>
                       <Button
                         size="icon"
                         variant="ghost"
