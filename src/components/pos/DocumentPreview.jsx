@@ -159,10 +159,50 @@ const DocumentPreview = ({
     };
   }, [sale, state, settings, calculateDetail]);
 
-  const handlePrint = () => {
-    if (pdfUrl) window.open(pdfUrl, "_blank");
-    else window.print();
+ const handlePrint = () => {
+  // Si hay un PDF fiscal emitido, abrilo directamente
+  if (pdfUrl) {
+    window.open(pdfUrl, "_blank");
+    return;
+  }
+
+  // Detectar qué vista está activa
+  const nodeId = activeTab === "80mm" ? "ticket80" : "docA4";
+  const node = document.getElementById(nodeId);
+  if (!node) {
+    toast({
+      title: "Error al imprimir",
+      description: "No se encontró el contenido del documento.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  // Clonar el contenido a una ventana temporal
+  const printWindow = window.open("", "_blank");
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Imprimir documento</title>
+        <style>
+          ${PRINT_FIX_CSS}
+          body { background: #fff; margin: 0; padding: 10px; }
+        </style>
+      </head>
+      <body>
+        ${node.outerHTML}
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+
+  // Esperar a que cargue el contenido antes de imprimir
+  printWindow.onload = () => {
+    printWindow.focus();
+    printWindow.print();
+    setTimeout(() => printWindow.close(), 100);
   };
+};
 
   const generateLocalPdf = async () => {
     const nodeId = activeTab === "80mm" ? "ticket80" : "docA4";
