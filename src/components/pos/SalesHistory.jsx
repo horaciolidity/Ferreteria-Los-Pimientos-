@@ -1,14 +1,20 @@
-// src/components/pos/SalesHistory.jsx
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { History, Printer, Package, DollarSign, Percent, Search, CheckSquare, Trash2 } from 'lucide-react';
+import {
+  History, Printer, Package, DollarSign, Percent,
+  Search, CheckSquare, Trash2
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { usePOS } from '@/contexts/POSContext';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
+} from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from '@/components/ui/select';
 import DocumentPreview from '@/components/pos/DocumentPreview';
 
 const currency = (n) => `$${Number(n || 0).toFixed(2)}`;
@@ -35,24 +41,48 @@ const humanType = (t) => {
   }
 };
 
+/* ==================== DETALLE ==================== */
 const SaleDetail = ({ sale }) => {
   const { dispatch } = usePOS();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [converted, setConverted] = useState(!!sale._converted);
 
-  const method   = sale?.payment?.method ?? sale?.paymentMethod;
-  const paid     = sale?.payment?.amountPaid ?? sale?.paymentAmount ?? 0;
-  const change   = sale?.payment?.change ?? sale?.change ?? 0;
-
-  const discountItems = sale?.itemDiscounts ?? (sale?.items || []).reduce((acc, i) => acc + Number(i.itemDiscount || 0), 0);
+  const method = sale?.payment?.method ?? sale?.paymentMethod;
+  const paid = sale?.payment?.amountPaid ?? sale?.paymentAmount ?? 0;
+  const change = sale?.payment?.change ?? sale?.change ?? 0;
+  const discountItems = sale?.itemDiscounts ?? (sale?.items || []).reduce((a, i) => a + Number(i.itemDiscount || 0), 0);
   const discountGlobal = Number(sale?.discount || 0);
   const iva = sale?.taxAmount ?? sale?.tax ?? 0;
 
   const reprintTicket = () => setPreviewOpen(true);
 
   const convertToSale = () => {
-    // Nota: asegurate de implementar esta acción en el reducer si la vas a usar.
-    dispatch?.({ type: 'CONVERT_QUOTE_TO_SALE', payload: sale });
-    toast({ title: 'Presupuesto convertido', description: 'El presupuesto se ha convertido a una venta.' });
+    if (!sale || sale.type !== 'quote') return;
+
+    if (converted || sale._converted) {
+      toast({
+        title: 'Ya convertido',
+        description: 'Este presupuesto ya fue convertido a venta.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const newSale = {
+      ...sale,
+      id: crypto.randomUUID(),
+      type: 'sale',
+      _converted: true,
+      timestamp: new Date().toISOString(),
+    };
+
+    dispatch({ type: 'CONVERT_QUOTE_TO_SALE', payload: newSale });
+    setConverted(true);
+
+    toast({
+      title: 'Presupuesto convertido',
+      description: 'Se ha generado una venta y el presupuesto fue cerrado.'
+    });
   };
 
   return (
@@ -176,12 +206,17 @@ const SaleDetail = ({ sale }) => {
           </div>
         </div>
 
-        {/* Acciones detalle */}
+        {/* Acciones */}
         <div className="flex justify-end pt-4 gap-2">
-          {sale.type === 'quote' && (
+          {sale.type === 'quote' && !converted && (
             <Button onClick={convertToSale} className="bg-green-600 hover:bg-green-700">
               <CheckSquare className="h-4 w-4 mr-2" />
               Convertir a Venta
+            </Button>
+          )}
+          {converted && (
+            <Button disabled variant="outline" className="text-green-600 border-green-500">
+              Ya convertido
             </Button>
           )}
           <Button onClick={reprintTicket}>
@@ -191,7 +226,7 @@ const SaleDetail = ({ sale }) => {
         </div>
       </DialogContent>
 
-      {/* Preview para reimprimir/descargar */}
+      {/* Preview */}
       <DocumentPreview
         isOpen={previewOpen}
         onOpenChange={setPreviewOpen}
@@ -202,6 +237,7 @@ const SaleDetail = ({ sale }) => {
   );
 };
 
+/* ==================== HISTORIAL ==================== */
 export default function SalesHistory() {
   const { state, dispatch } = usePOS();
   const [filters, setFilters] = useState({
@@ -212,7 +248,6 @@ export default function SalesHistory() {
     search: '',
   });
 
-  // Base DESC por fecha: última venta arriba
   const salesDesc = useMemo(
     () => ([...(state.sales || [])]).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
     [state.sales]
@@ -247,7 +282,7 @@ export default function SalesHistory() {
   const clearAll = () => {
     if (filteredSales.length === 0 && (state.sales || []).length === 0) return;
     if (window.confirm(`Se eliminará TODO el historial de ventas (${(state.sales || []).length} registros). ¿Continuar?`)) {
-      dispatch({ type: 'CLEAR_SALES_HISTORY' }); // recuerda tener este case en el reducer
+      dispatch({ type: 'CLEAR_SALES_HISTORY' });
       toast({ title: 'Historial eliminado', description: 'Se borraron todas las ventas guardadas.' });
     }
   };
@@ -267,19 +302,11 @@ export default function SalesHistory() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
           <div className="space-y-1">
             <Label>Desde</Label>
-            <Input
-              type="date"
-              value={filters.dateStart}
-              onChange={(e) => handleFilterChange('dateStart', e.target.value)}
-            />
+            <Input type="date" value={filters.dateStart} onChange={(e) => handleFilterChange('dateStart', e.target.value)} />
           </div>
           <div className="space-y-1">
             <Label>Hasta</Label>
-            <Input
-              type="date"
-              value={filters.dateEnd}
-              onChange={(e) => handleFilterChange('dateEnd', e.target.value)}
-            />
+            <Input type="date" value={filters.dateEnd} onChange={(e) => handleFilterChange('dateEnd', e.target.value)} />
           </div>
           <div className="space-y-1">
             <Label>Tipo</Label>
@@ -296,10 +323,7 @@ export default function SalesHistory() {
           </div>
           <div className="space-y-1">
             <Label>Pago</Label>
-            <Select
-              value={filters.paymentMethod}
-              onValueChange={(v) => handleFilterChange('paymentMethod', v)}
-            >
+            <Select value={filters.paymentMethod} onValueChange={(v) => handleFilterChange('paymentMethod', v)}>
               <SelectTrigger><SelectValue placeholder="Todos" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
@@ -315,12 +339,7 @@ export default function SalesHistory() {
             <Label>Buscar</Label>
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Nro o Cliente..."
-                value={filters.search}
-                onChange={(e) => handleFilterChange('search', e.target.value)}
-                className="pl-8"
-              />
+              <Input placeholder="Nro o Cliente..." value={filters.search} onChange={(e) => handleFilterChange('search', e.target.value)} className="pl-8" />
             </div>
           </div>
         </div>
@@ -343,16 +362,8 @@ export default function SalesHistory() {
             </thead>
             <tbody>
               {filteredSales.map((sale, index) => (
-                <motion.tr
-                  key={sale.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: index * 0.02 }}
-                  className="border-b border-border/50 hover:bg-accent"
-                >
-                  <td className="p-3 text-sm text-muted-foreground">
-                    {new Date(sale.timestamp).toLocaleString()}
-                  </td>
+                <motion.tr key={sale.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.02 }} className="border-b border-border/50 hover:bg-accent">
+                  <td className="p-3 text-sm text-muted-foreground">{new Date(sale.timestamp).toLocaleString()}</td>
                   <td className="p-3 font-medium">{sale.documentNumber}</td>
                   <td className="p-3 capitalize text-yellow-500">{humanType(sale.type)}</td>
                   <td className="p-3 text-muted-foreground">{sale.customer?.name || 'Consumidor Final'}</td>
