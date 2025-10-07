@@ -1,4 +1,3 @@
-// src/components/pos/CustomerManagement.jsx
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Users, Plus, Edit3, Trash2, Search, CreditCard } from "lucide-react";
@@ -16,7 +15,7 @@ import { usePOS } from "@/contexts/POSContext";
 import { toast } from "@/components/ui/use-toast";
 
 export default function CustomerManagement() {
-  const { state, dispatch, addCustomer } = usePOS();
+  const { state, addCustomer, deleteCustomer, dispatch } = usePOS();
   const [searchQuery, setSearchQuery] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -79,7 +78,6 @@ export default function CustomerManagement() {
   };
 
   const handleEditCustomer = (customer) => {
-    // Clono para no mutar el objeto del estado antes de guardar
     setNewCustomer({
       name: customer.name || "",
       phone: customer.phone || "",
@@ -93,19 +91,25 @@ export default function CustomerManagement() {
 
   const handleDeleteCustomer = (customerId) => {
     const customer = customers.find((c) => c.id === customerId);
-    if ((customer?.balance ?? 0) < 0) {
+    if (!customer) return;
+
+    if ((customer.balance ?? 0) < 0) {
       toast({
         title: "No permitido",
-        description:
-          "No se puede eliminar un cliente con deuda pendiente.",
+        description: "No se puede eliminar un cliente con deuda pendiente.",
         variant: "destructive",
       });
       return;
     }
+
+    if (!window.confirm(`¿Seguro que deseas eliminar a ${customer.name}?`)) {
+      return;
+    }
+
     dispatch({ type: "DELETE_CUSTOMER", payload: customerId });
     toast({
       title: "Cliente eliminado",
-      description: "El cliente ha sido eliminado.",
+      description: `${customer.name} ha sido eliminado correctamente.`,
     });
   };
 
@@ -115,7 +119,7 @@ export default function CustomerManagement() {
         currentBalance
       ).toFixed(2)}\nIngrese monto pagado (positivo):`
     );
-    if (raw === null) return; // cancelado
+    if (raw === null) return;
     const value = Number(parseFloat(raw).toFixed(2));
     if (!isFinite(value) || value <= 0) {
       toast({
@@ -125,8 +129,6 @@ export default function CustomerManagement() {
       });
       return;
     }
-    // En este sistema, el saldo negativo es deuda.
-    // Un pago aumenta el saldo hacia 0 (suma).
     const newBalance = Number((Number(currentBalance || 0) + value).toFixed(2));
     dispatch({
       type: "UPDATE_CUSTOMER",
@@ -263,17 +265,11 @@ export default function CustomerManagement() {
             <thead>
               <tr className="border-b border-border">
                 <th className="text-left text-muted-foreground p-2">Nombre</th>
-                <th className="text-left text-muted-foreground p-2">
-                  Contacto
-                </th>
+                <th className="text-left text-muted-foreground p-2">Contacto</th>
                 <th className="text-right text-muted-foreground p-2">Saldo</th>
-                <th className="text-right text-muted-foreground p-2">
-                  Límite
-                </th>
+                <th className="text-right text-muted-foreground p-2">Límite</th>
                 <th className="text-right text-muted-foreground p-2">Ventas</th>
-                <th className="text-center text-muted-foreground p-2">
-                  Acciones
-                </th>
+                <th className="text-center text-muted-foreground p-2">Acciones</th>
               </tr>
             </thead>
 
@@ -369,7 +365,9 @@ export default function CustomerManagement() {
           {filteredCustomers.length === 0 && (
             <div className="text-center py-8">
               <Users className="h-12 w-12 text-muted-foreground/50 mx-auto mb-2" />
-              <p className="text-muted-foreground">No se encontraron clientes</p>
+              <p className="text-muted-foreground">
+                No se encontraron clientes
+              </p>
             </div>
           )}
         </div>

@@ -148,6 +148,16 @@ function posReducer(state, action) {
       return { ...state, customers: [...state.customers, { ...action.payload, id: Date.now().toString(), balance: 0 }] };
     case 'UPDATE_CUSTOMER':
       return { ...state, customers: state.customers.map(c => (c.id === action.payload.id ? { ...c, ...action.payload.updates } : c)) };
+      case 'DELETE_CUSTOMER': {
+  const id = action.payload;
+  return {
+    ...state,
+    customers: state.customers.filter(c => c.id !== id),
+    // Limpia cualquier referencia activa al cliente actual
+    currentCustomer: state.currentCustomer?.id === id ? null : state.currentCustomer,
+  };
+}
+
 
     case 'ADD_PROVIDER':
       return { ...state, providers: [...state.providers, { ...action.payload, id: Date.now().toString() }] };
@@ -717,6 +727,11 @@ export function POSProvider({ children }) {
     toast({ title: 'Cliente agregado', description: `${newCustomer.name} ha sido agregado.` });
     return newCustomer;
   };
+  const deleteCustomer = (id) => {
+  dispatch({ type: 'DELETE_CUSTOMER', payload: id });
+  toast({ title: 'Cliente eliminado', description: 'El cliente ha sido eliminado correctamente.' });
+};
+
 
   const addProvider = (providerData) => {
     if (!providerData?.name?.trim()) {
@@ -745,6 +760,7 @@ export function POSProvider({ children }) {
     calculateDetail,
     processSale,
     addCustomer,
+    deleteCustomer,
     addProvider,
   }), [state]);
 
