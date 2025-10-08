@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search, ShoppingCart, Calculator, Users, Package, DollarSign,
-  BarChart3, Settings, Monitor, History, Truck, Sun, Moon
+  BarChart3, Settings, Monitor, History, Truck, Sun, Moon,
+  MessageCircle, Mail
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,12 +37,10 @@ export default function POSScreen() {
         ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName) ||
         document.activeElement?.getAttribute('contenteditable') === 'true';
 
-      // Evitamos que F-keys disparen acciones del navegador
       if (e.key.startsWith('F') && !e.altKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
       }
 
-      // Atajos
       switch (e.key) {
         case 'F2':
           e.preventDefault();
@@ -76,29 +75,30 @@ export default function POSScreen() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, dispatch]);
 
-  // Abre la pantalla cliente respetando HashRouter (/#/customer-display)
   const openCustomerDisplay = () => {
     try {
       const base = window.location.origin;
-      const url = `${base}/#/customer-display`; // usamos hash para evitar 404 en Vercel
+      const url = `${base}/#/customer-display`;
       window.open(url, 'customer_display', 'width=1024,height=768');
     } catch {
-      // fallback simple
       window.open('/#/customer-display', '_blank', 'width=1024,height=768');
     }
   };
+
+  // 🟢 Configuración de soporte
+  const whatsappNumber = "5492617048835"; // reemplazá con tu número real sin +
+  const whatsappLink = `https://wa.me/${whatsappNumber}?text=Hola!%20Necesito%20soporte%20para%20mi%20sistema%20POS.`;
+  const emailSupport = "horacio.dev.sol@gmail.com";
 
   return (
     <div className="relative min-h-screen bg-background text-foreground">
       <div className="p-4 pb-20 md:pb-16 max-w-screen-2xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-
-          {/* ===== BANNER SUPERIOR con imagen JPEG de fondo ===== */}
+          {/* ===== BANNER SUPERIOR ===== */}
           <div
             className="relative rounded-xl overflow-hidden mb-6"
             style={{ height: 220 }}
           >
-            {/* Capa de imagen (poné tu JPEG en /public/hero.jpeg) */}
             <div
               className="absolute inset-0 bg-cover bg-center"
               style={{
@@ -107,7 +107,6 @@ export default function POSScreen() {
                 filter: 'saturate(0.95) contrast(1.05)',
               }}
             />
-            {/* Capa de degradado para legibilidad */}
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
@@ -116,7 +115,6 @@ export default function POSScreen() {
               }}
             />
 
-            {/* Contenido del banner (encabezado) */}
             <div className="relative h-full px-4 md:px-6 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center space-x-4">
                 <div className="p-3 rounded-lg bg-black/30 backdrop-blur">
@@ -209,6 +207,30 @@ export default function POSScreen() {
           </Tabs>
         </motion.div>
       </div>
+
+      {/* 🟢 BOTÓN FLOTANTE DE SOPORTE */}
+      <div className="fixed bottom-6 right-6 flex flex-col items-end gap-2 z-50">
+        <a
+          href={whatsappLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center space-x-2 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-lg px-4 py-2 transition-transform hover:scale-110"
+          title="Soporte por WhatsApp"
+        >
+          <MessageCircle className="h-5 w-5" />
+          <span className="hidden md:inline font-medium">WhatsApp</span>
+        </a>
+
+        <a
+          href={`mailto:${emailSupport}`}
+          className="flex items-center space-x-2 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg px-4 py-2 transition-transform hover:scale-110"
+          title="Soporte por Email"
+        >
+          <Mail className="h-5 w-5" />
+          <span className="hidden md:inline font-medium">Soporte</span>
+        </a>
+      </div>
+
       <KeyboardShortcutsBanner />
     </div>
   );
