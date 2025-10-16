@@ -130,9 +130,20 @@ export default function SettingsPanel() {
               </SelectContent>
             </Select>
           </div>
+
+          {/* ==== CAMPO MODIFICADO ==== */}
           <div>
             <Label>Tasa de IVA (%)</Label>
-            <Input type="number" step="0.01" min="0" value={(settings.taxRate * 100).toFixed(2)} onChange={(e) => handleSettingsChange('taxRate', parseFloat(e.target.value) / 100 || 0)} />
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={settings.taxRate?.toString() || ''}
+              onChange={(e) => handleSettingsChange('taxRate', e.target.value.replace(',', '.'))}
+              onBlur={(e) => {
+                const val = parseFloat(e.target.value.replace(',', '.'));
+                handleSettingsChange('taxRate', isNaN(val) ? 0 : val);
+              }}
+            />
           </div>
         </div>
       </motion.div>

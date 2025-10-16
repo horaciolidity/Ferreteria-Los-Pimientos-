@@ -77,20 +77,30 @@ export default function Statistics() {
   const averageTicket = totalSales > 0 ? totalRevenue / totalSales : 0;
   const marginPercentage = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
-  // -------- Top Productos --------
-  const topSellingProducts = useMemo(() => {
-    const map = {};
-    filteredSales.forEach((sale) => {
-      (sale.items || []).forEach((it) => {
-        const id = it.id || it.code || it.name;
-        if (!map[id]) map[id] = { name: it.name, quantity: 0, revenue: 0 };
-        map[id].quantity += Number(it.quantity || 0);
-        const line = Number(it.price || 0) * Number(it.quantity || 0) - Number(it.itemDiscount || 0);
-        map[id].revenue += line;
-      });
+ // -------- Top Productos --------
+const topSellingProducts = useMemo(() => {
+  const map = {};
+  filteredSales.forEach((sale) => {
+    (sale.items || []).forEach((it) => {
+      const id = it.id || it.code || it.name;
+      if (!map[id]) map[id] = { name: it.name, quantity: 0, revenue: 0 };
+      map[id].quantity += Number(it.quantity || 0);
+      const line = Number(it.price || 0) * Number(it.quantity || 0) - Number(it.itemDiscount || 0);
+      map[id].revenue += line;
     });
-    return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  }, [filteredSales]);
+  });
+
+  const totalRevenueAll = Object.values(map).reduce((sum, p) => sum + p.revenue, 0);
+
+  return Object.values(map)
+    .map(p => ({
+      ...p,
+      share: totalRevenueAll > 0 ? (p.revenue / totalRevenueAll) * 100 : 0,
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
+}, [filteredSales]);
+
 
   // -------- Top Clientes --------
   const topCustomers = useMemo(() => {
@@ -472,27 +482,30 @@ ${filteredSales.map(s=>{
           <div className="overflow-x-auto">
             <table className="w-full text-base">
               <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left text-muted-foreground pb-2">Producto</th>
-                  <th className="text-right text-muted-foreground pb-2">Cant.</th>
-                  <th className="text-right text-muted-foreground pb-2">Ingresos</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topSellingProducts.map((p, i) => (
-                  <motion.tr
-                    key={`${p.name}_${i}`}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="border-b border-border/50"
-                  >
-                    <td className="py-3 font-medium">{p.name}</td>
-                    <td className="py-3 text-right text-muted-foreground">{Number(p.quantity || 0).toFixed(2)}</td>
-                    <td className="py-3 text-right text-green-600 font-medium">{currencyFmt(p.revenue)}</td>
-                  </motion.tr>
-                ))}
-              </tbody>
+  <tr className="border-b border-border">
+    <th className="text-left text-muted-foreground pb-2">Producto</th>
+    <th className="text-right text-muted-foreground pb-2">Cant.</th>
+    <th className="text-right text-muted-foreground pb-2">Ingresos</th>
+    <th className="text-right text-muted-foreground pb-2">% del total</th>
+  </tr>
+</thead>
+<tbody>
+  {topSellingProducts.map((p, i) => (
+    <motion.tr
+      key={`${p.name}_${i}`}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: i * 0.05 }}
+      className="border-b border-border/50"
+    >
+      <td className="py-3 font-medium">{p.name}</td>
+      <td className="py-3 text-right text-muted-foreground">{Number(p.quantity || 0).toFixed(2)}</td>
+      <td className="py-3 text-right text-green-600 font-medium">{currencyFmt(p.revenue)}</td>
+      <td className="py-3 text-right text-muted-foreground">{p.share.toFixed(1)}%</td>
+    </motion.tr>
+  ))}
+</tbody>
+
             </table>
             {topSellingProducts.length === 0 && (
               <div className="text-center py-8">
