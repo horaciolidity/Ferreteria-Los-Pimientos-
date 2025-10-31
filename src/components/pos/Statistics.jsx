@@ -49,20 +49,43 @@ export default function Statistics() {
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [resetKey, setResetKey] = useState(0); // fuerza rerender al limpiar
 
-  const filteredSales = useMemo(() => {
-    const startDate = dateRange.start ? new Date(dateRange.start) : null;
-    const endDate = dateRange.end ? new Date(dateRange.end) : null;
-    if (endDate) endDate.setHours(23, 59, 59, 999);
+const filteredSales = useMemo(() => {
+  if (!state.sales) return [];
 
-    return (state.sales || []).filter((sale) => {
-      // excluir presupuestos del panel de KPIs
-      if (sale.type === 'quote') return false;
-      const when = new Date(sale.timestamp);
-      if (startDate && when < startDate) return false;
-      if (endDate && when > endDate) return false;
-      return true;
-    });
-  }, [state.sales, dateRange]);
+  // 🔹 Si no hay fechas seleccionadas, mostramos todo excepto presupuestos
+  if (!dateRange.start && !dateRange.end)
+    return state.sales.filter((s) => s.type !== "quote");
+
+  // 🔹 Normaliza fechas seleccionadas (soporta un solo campo)
+  const startDate = dateRange.start
+    ? new Date(`${dateRange.start}T00:00:00`)
+    : null;
+  const endDate = dateRange.end
+    ? new Date(`${dateRange.end}T23:59:59`)
+    : null;
+
+  // 🔹 Intercambia si el usuario seleccionó el rango al revés
+  let from = startDate;
+  let to = endDate;
+  if (from && to && from > to) {
+    [from, to] = [to, from];
+  }
+
+  return state.sales.filter((sale) => {
+    if (sale.type === "quote") return false;
+
+    // Evita errores si timestamp viene sin hora o en UTC
+    const ts = sale.timestamp?.length <= 10
+      ? `${sale.timestamp}T12:00:00`
+      : sale.timestamp;
+    const when = new Date(ts);
+
+    if (from && when < from) return false;
+    if (to && when > to) return false;
+    return true;
+  });
+}, [state.sales, dateRange]);
+
 
   // -------- KPIs --------
   const totalRevenue = useMemo(
@@ -435,35 +458,90 @@ ${filteredSales.map(s=>{
       </div>
 
       {/* Filtros de fecha */}
-      <div className="card-glass p-4 rounded-lg">
-        <div className="flex flex-wrap items-center gap-4">
-          <Calendar className="h-5 w-5 text-primary" />
-          <div className="flex items-center gap-2">
-            <Input
-              key={`start-${resetKey}`}
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange((r) => ({ ...r, start: e.target.value }))}
-            />
-            <span className="text-muted-foreground">a</span>
-            <Input
-              key={`end-${resetKey}`}
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange((r) => ({ ...r, end: e.target.value }))}
-            />
-          </div>
-          <Button
-            onClick={() => {
-              setDateRange({ start: '', end: '' });
-              setResetKey((k) => k + 1); // fuerza rerender y limpia UI
-            }}
-            variant="outline"
-          >
-            Limpiar
-          </Button>
-        </div>
-      </div>
+<div className="card-glass p-4 rounded-lg">
+  <div className="flex flex-wrap items-center gap-4">
+    <Calendar className="h-5 w-5 text-primary" />
+
+    {/* Selector manual */}
+    <div className="flex items-center gap-2">
+      <Input
+        key={`start-${resetKey}`}
+        type="date"
+        value={dateRange.start}
+        onChange={(e) =>
+          setDateRange((r) => ({ ...r, start: e.target.value }))
+        }
+      />
+      <span className="text-muted-foreground">a</span>
+      <Input
+        key={`end-${resetKey}`}
+        type="date"
+        value={dateRange.end}
+        onChange={(e) =>
+          setDateRange((r) => ({ ...r, end: e.target.value }))
+        }
+      />
+    </div>
+
+    {/* Botones rápidos */}
+     <div className="flex flex-wrap gap-2 bg-muted/40 p-2 rounded-lg">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          const today = new Date().toISOString().split("T")[0];
+          setDateRange({ start: today, end: today });
+        }}
+      >
+        Hoy
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          const now = new Date();
+          const day = now.getDay();
+          const diffToMonday = day === 0 ? 6 : day - 1;
+          const monday = new Date(now);
+          monday.setDate(now.getDate() - diffToMonday);
+          const sunday = new Date(monday);
+          sunday.setDate(monday.getDate() + 6);
+          setDateRange({
+            start: monday.toISOString().split("T")[0],
+            end: sunday.toISOString().split("T")[0],
+          });
+        }}
+      >
+        Esta Semana
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          const now = new Date();
+          const first = new Date(now.getFullYear(), now.getMonth(), 1);
+          const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+          setDateRange({
+            start: first.toISOString().split("T")[0],
+            end: last.toISOString().split("T")[0],
+          });
+        }}
+      >
+        Este Mes
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => {
+          setDateRange({ start: "", end: "" });
+          setResetKey((k) => k + 1);
+        }}
+      >
+        Limpiar
+      </Button>
+    </div>
+  </div>
+</div>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">

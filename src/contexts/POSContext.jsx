@@ -194,6 +194,58 @@ function posReducer(state, action) {
       ],
     },
   };
+    case 'REGISTER_SALE': {
+      const sale = action.payload;
+      if (!state.cashRegister.isOpen) return state;
+
+      const method = sale.paymentMethod || 'cash';
+      const total = Number(sale.total || 0);
+      const profit = Number(sale.profit || 0);
+
+      // Movimientos de caja
+      const movements = [...state.cashRegister.movements];
+      const newMovement = {
+        id: cryptoRandom(),
+        type: method === 'cash' || method === 'mixed' ? 'income' : 'info',
+        concept: `Venta (${method})`,
+        amount: method === 'cash' || method === 'mixed' ? total : 0,
+        timestamp: sale.timestamp || new Date().toISOString(),
+      };
+
+      if (method === 'cash' || method === 'mixed') {
+        movements.push(newMovement);
+      }
+
+      // Actualización de caja
+      const newCash = { ...state.cashRegister };
+      if (method === 'cash') {
+        newCash.currentAmount += total;
+        newCash.salesByType.cash += total;
+      } else if (method === 'transfer') {
+        newCash.salesByType.transfer += total;
+      } else if (method === 'mixed') {
+        newCash.currentAmount += total * 0.5;
+        newCash.cashFromMixed += total * 0.5;
+        newCash.salesByType.mixed += total;
+      }
+
+      // Guardar movimiento y venta del día
+      return {
+        ...state,
+        sales: [
+          ...state.sales,
+          {
+            ...sale,
+            timestamp: sale.timestamp || new Date().toISOString(),
+            profit,
+          },
+        ],
+        cashRegister: {
+          ...newCash,
+          movements,
+        },
+      };
+    }
 
 
     case 'ADD_CASH_MOVEMENT': {

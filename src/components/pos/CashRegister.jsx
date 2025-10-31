@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { usePOS } from '@/contexts/POSContext';
 import { toast } from '@/components/ui/use-toast';
 import { Textarea } from '@/components/ui/textarea';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+
 
 /* ================== Diálogo de movimiento ================== */
 const CashMovementDialog = ({ isOpen, onOpenChange }) => {
@@ -320,6 +322,76 @@ export default function CashRegister() {
               <Button className="w-full bg-red-600 mt-5" onClick={handleCloseRegister}>
                 <Lock className="h-4 w-4 mr-2" />Cerrar Caja
               </Button>
+              {/* Resumen del día */}
+<div className="mt-5 border-t pt-3">
+  <h3 className="text-lg font-semibold mb-3">Resumen Diario</h3>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+    {/* Datos numéricos */}
+    <div className="space-y-1 text-sm">
+      <div className="flex justify-between">
+        <span>💵 Total Ventas</span>
+        <span className="font-semibold">
+          $
+          {(
+            totalCashSales +
+            totalTransferSales +
+            totalMixedSales
+          ).toFixed(2)}
+        </span>
+      </div>
+
+      <div className="flex justify-between">
+        <span>📈 Ganancia Neta</span>
+        <span className="text-green-500 font-semibold">
+          +${gananciaTurno.toFixed(2)}
+        </span>
+      </div>
+
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>Promedio por venta</span>
+        <span>${promGanancia.toFixed(2)}</span>
+      </div>
+    </div>
+
+    {/* Gráfico donut */}
+    <div className="flex justify-center">
+      <ResponsiveContainer width={120} height={120}>
+        <PieChart>
+          <Pie
+            data={[
+              { name: 'Efectivo', value: totalCashSales },
+              { name: 'Transferencia', value: totalTransferSales },
+              { name: 'Mixto', value: totalMixedSales },
+            ]}
+            dataKey="value"
+            nameKey="name"
+            cx="50%"
+            cy="50%"
+            innerRadius={35}
+            outerRadius={55}
+            paddingAngle={2}
+            labelLine={false}
+          >
+            <Cell fill="#16a34a" /> {/* Efectivo */}
+            <Cell fill="#3b82f6" /> {/* Transferencia */}
+            <Cell fill="#facc15" /> {/* Mixto */}
+          </Pie>
+          <Tooltip
+            formatter={(v, n) => [`$${Number(v).toFixed(2)}`, n]}
+            contentStyle={{
+              background: 'rgba(255,255,255,0.95)',
+              border: '1px solid #ddd',
+              borderRadius: '8px',
+              fontSize: '12px',
+            }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+</div>
+
             </>
           ) : (
             <div className="space-y-4">
@@ -355,7 +427,10 @@ export default function CashRegister() {
               <div className="flex justify-between"><span>Subtotal</span><span>${subtotalTurno.toFixed(2)}</span></div>
               <div className="flex justify-between"><span>IVA</span><span>${ivaTurno.toFixed(2)}</span></div>
               <div className="flex justify-between font-semibold"><span>Total</span><span>${totalTurno.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>Ganancia Neta</span><span className="text-green-500">${gananciaTurno.toFixed(2)}</span></div>
+<div className="flex justify-between text-base font-semibold border-t pt-2">
+  <span>Ganancia Neta</span>
+  <span className="text-green-500">+${gananciaTurno.toFixed(2)}</span>
+</div>
               <div className="flex justify-between text-xs text-muted-foreground"><span>Promedio por venta</span><span>${promGanancia.toFixed(2)}</span></div>
               <div className="border-t mt-2 pt-2">
                 <p className="text-sm font-semibold mb-1">Desglose por método:</p>
@@ -368,6 +443,30 @@ export default function CashRegister() {
             </div>
           )}
         </div>
+        <div className="border-t mt-4 pt-2">
+  <p className="text-sm font-semibold mb-1">Productos vendidos:</p>
+  {salesInTurn.flatMap((s) => s.items || []).length === 0 ? (
+    <p className="text-muted-foreground text-sm">Aún no se registran productos vendidos.</p>
+  ) : (
+    <div className="max-h-32 overflow-y-auto text-xs space-y-1">
+      {salesInTurn
+        .flatMap((s) => s.items || [])
+        .reduce((acc, item) => {
+          const existing = acc.find((a) => a.name === item.name);
+          if (existing) existing.quantity += Number(item.quantity || 0);
+          else acc.push({ name: item.name, quantity: Number(item.quantity || 0) });
+          return acc;
+        }, [])
+        .map((it, i) => (
+          <div key={i} className="flex justify-between border-b border-border/30 pb-1">
+            <span>{it.name}</span>
+            <span>x{it.quantity}</span>
+          </div>
+        ))}
+    </div>
+  )}
+</div>
+
       </div>
 
       {/* Historial de cierres */}
