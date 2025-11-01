@@ -122,33 +122,45 @@ export default function CashRegister() {
   const totalTransferSales = Number(salesByType.transfer || 0);
   const totalMixedSales = Number(salesByType.mixed || 0);
 
-  // 🔧 Calcular correctamente el neto de movimientos
-// Incluye ventas, pero evita duplicar apertura/cierre o saldos automáticos
-const movNet = (movements || []).reduce((acc, mov) => {
-  const concept = (mov.concept || '').toLowerCase();
+ // 🔧 Solo movimientos MANUALES reales (excluir ventas/vueltos/apertura/cierre/auto)
+const movNet = (movements || [])
+  .filter((m) => {
+    const c = String(m.concept || '').toLowerCase();
 
-  // ignoramos solo apertura o cierre automáticos, no las ventas
-  if (concept.includes('apertura') || concept.includes('cierre')) return acc;
+    // si viene marcado como manual, se acepta
+    if (m.manual === true || m.isManual === true || m.kind === 'manual' || m.source === 'manual') {
+      return true;
+    }
 
-  // aseguramos que monto sea positivo y válido
-  const amount = Number(mov.amount || 0);
+    // excluir todo lo automático o propio de la venta
+    if (
+      c.includes('venta') ||        // "Venta TEMP-..."
+      c.includes('vuelto') ||       // Vuelto
+      c.includes('apertura') ||     // Apertura
+      c.includes('cierre') ||       // Cierre
+      c.includes('[auto]')          // cualquier tag automático
+    ) return false;
 
-  if (mov.type === 'income') return acc + amount;
-  if (mov.type === 'expense') return acc - amount;
-  return acc;
-}, 0);
+    // por defecto, aceptar solo si el concepto luce manual
+    return c.includes('manual') || c.includes('retiro') || c.includes('ingreso');
+  })
+  .reduce((acc, m) => {
+    const amount = Number(m.amount || 0);
+    if (m.type === 'income') return acc + amount;
+    if (m.type === 'expense') return acc - amount;
+    return acc;
+  }, 0);
 
-
-
-  const expectedAmount = parseFloat(
+// 💵 Solo efectivo en caja: apertura + efectivo + efectivo de mixto + mov. manuales
+const expectedAmount = parseFloat(
   (
     Number(currentOpening || 0) +
     Number(totalCashSales || 0) +
-    Number(totalTransferSales || 0) +
-    Number(totalMixedSales || 0) +
+    Number(cashFromMixed || 0) +
     Number(movNet || 0)
   ).toFixed(2)
 );
+
 
 const difference = parseFloat((Number(currentAmount || 0) - expectedAmount).toFixed(2));
 
