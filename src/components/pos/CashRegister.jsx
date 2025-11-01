@@ -122,22 +122,35 @@ export default function CashRegister() {
   const totalTransferSales = Number(salesByType.transfer || 0);
   const totalMixedSales = Number(salesByType.mixed || 0);
 
-  /* ------------------- Lógica principal ------------------- */
-  const movNet = (movements || []).reduce((acc, mov) => {
-    const concept = (mov.concept || '').toLowerCase();
-    if (concept.includes('venta') || concept.includes('vuelto')) return acc;
-    if (mov.type === 'income') return acc + Number(mov.amount || 0);
-    if (mov.type === 'expense') return acc - Number(mov.amount || 0);
-    return acc;
-  }, 0);
+  // 🔧 Calcular correctamente el neto de movimientos
+// Incluye ventas, pero evita duplicar apertura/cierre o saldos automáticos
+const movNet = (movements || []).reduce((acc, mov) => {
+  const concept = (mov.concept || '').toLowerCase();
 
-  const expectedAmount =
+  // ignoramos solo apertura o cierre automáticos, no las ventas
+  if (concept.includes('apertura') || concept.includes('cierre')) return acc;
+
+  // aseguramos que monto sea positivo y válido
+  const amount = Number(mov.amount || 0);
+
+  if (mov.type === 'income') return acc + amount;
+  if (mov.type === 'expense') return acc - amount;
+  return acc;
+}, 0);
+
+
+
+  const expectedAmount = parseFloat(
+  (
     Number(currentOpening || 0) +
     Number(totalCashSales || 0) +
-    Number(cashFromMixed || 0) +
-    Number(movNet || 0);
+    Number(totalTransferSales || 0) +
+    Number(totalMixedSales || 0) +
+    Number(movNet || 0)
+  ).toFixed(2)
+);
 
-  const difference = Number(currentAmount || 0) - Number(expectedAmount || 0);
+const difference = parseFloat((Number(currentAmount || 0) - expectedAmount).toFixed(2));
 
   /* ------------------- Totales del turno ------------------- */
   const salesInTurn = useMemo(() => {
@@ -233,7 +246,8 @@ export default function CashRegister() {
       });
       return;
     }
-    dispatch({ type: 'OPEN_CASH_REGISTER', payload: Number(openingAmount) });
+const fixedOpening = parseFloat(parseFloat(openingAmount).toFixed(2));
+dispatch({ type: 'OPEN_CASH_REGISTER', payload: fixedOpening });
     toast({
       title: 'Caja abierta',
       description: `Caja abierta con un monto inicial de $${Number(openingAmount).toFixed(2)}`,
@@ -250,7 +264,7 @@ export default function CashRegister() {
       salesByType,
       currentAmount,
       expectedAmount,
-      difference,
+      difference: parseFloat(difference.toFixed(2)),
       movements,
     };
     dispatch({ type: 'CLOSE_CASH_REGISTER', payload: closure });
@@ -447,6 +461,56 @@ export default function CashRegister() {
 </div>
 
       </div>
+{/* Detalle de ventas del día */}
+<div className="card-glass p-6 rounded-lg mt-4">
+  <h2 className="text-xl font-semibold mb-3">Detalle de Ventas del Día</h2>
+  {salesInTurn.length === 0 ? (
+    <p className="text-muted-foreground text-sm">No hay ventas registradas.</p>
+  ) : (
+    <div className="max-h-72 overflow-y-auto text-xs space-y-3">
+      {salesInTurn.map((venta, i) => (
+        <div key={i} className="border border-border/40 rounded-lg p-2 bg-background/40">
+          <div className="flex justify-between items-center border-b border-border/30 pb-1 mb-1">
+            <span className="font-semibold text-sm">Venta #{i + 1}</span>
+            <span className="text-muted-foreground text-[11px]">
+              {new Date(venta.timestamp).toLocaleTimeString()}
+            </span>
+          </div>
+
+          <div className="flex justify-between text-sm mb-1">
+            <span>Método:</span>
+            <span className="capitalize">
+              {venta.payment?.method || venta.paymentMethod || "Desconocido"}
+            </span>
+          </div>
+
+          <div className="flex justify-between text-sm mb-1">
+            <span>Total:</span>
+            <span>${Number(venta.total || 0).toFixed(2)}</span>
+          </div>
+<div className="flex justify-between text-xs mt-1">
+  <span>Subtotal:</span>
+  <span>${Number(venta.subtotal || 0).toFixed(2)}</span>
+</div>
+<div className="flex justify-between text-xs">
+  <span>IVA:</span>
+  <span>${Number(venta.taxAmount || venta.tax || 0).toFixed(2)}</span>
+</div>
+
+          {venta.items?.length > 0 && (
+            <ul className="pl-4 mt-1 list-disc text-muted-foreground space-y-0.5">
+              {venta.items.map((p, j) => (
+                <li key={j}>
+                  {p.name} — x{p.quantity} — ${Number(p.price || 0).toFixed(2)} c/u
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  )}
+</div>
 
       {/* Historial de cierres */}
       <div className="card-glass p-6 rounded-lg">
