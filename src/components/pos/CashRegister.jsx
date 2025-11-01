@@ -189,64 +189,96 @@ const difference = parseFloat((Number(currentAmount || 0) - expectedAmount).toFi
   }, {});
 
   /* ------------------- Función para imprimir ------------------- */
-  const printReport = (closure) => {
-    const w = window.open('', '_blank', 'width=900,height=700');
-    if (!w) {
-      toast({
-        title: 'Pop-up bloqueado',
-        description: 'Permití ventanas emergentes para imprimir.',
-        variant: 'destructive',
-      });
-      return;
+ const printReport = (closure) => {
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (!w) {
+    toast({
+      title: 'Pop-up bloqueado',
+      description: 'Permití ventanas emergentes para imprimir.',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
+
+  const style = `
+    <style>
+      body{font-family: Arial, sans-serif; margin:24px; color:#111;}
+      h1{font-size:20px; margin-bottom:10px;}
+      h2{font-size:16px; margin-top:20px;}
+      table{width:100%; border-collapse:collapse; margin-top:8px;}
+      th,td{border:1px solid #ddd; padding:5px; text-align:right;}
+      th{text-align:left; background:#f8f8f8;}
+      .green{color:#16a34a;} .red{color:#dc2626;}
+      .small{font-size:12px; color:#555;}
+      ul{margin-top:4px; margin-bottom:8px; padding-left:20px;}
+    </style>
+  `;
+
+  const html = `
+    <!doctype html><html><head><meta charset="utf-8"><title>Arqueo de Caja</title>${style}</head><body>
+    <h1>Arqueo de Caja</h1>
+    <p class="small">Apertura: ${new Date(closure.openedAt).toLocaleString()}<br>
+    Cierre: ${new Date(closure.closedAt).toLocaleString()}</p>
+
+    <table>
+      <tr><th>Inicial</th><th>Ventas Efectivo</th><th>Mixto (ef.)</th><th>Mov. Manuales</th><th>Esperado</th><th>Actual</th><th>Diferencia</th></tr>
+      <tr>
+        <td>${fmt(closure.openingAmount)}</td>
+        <td>${fmt(closure.salesByType?.cash || 0)}</td>
+        <td>${fmt(closure.salesByType?.mixed || 0)}</td>
+        <td>${fmt(
+          closure.movements
+            ?.filter((m) => m.type === 'income' || m.type === 'expense')
+            ?.reduce((a, m) => a + (m.type === 'income' ? m.amount : -m.amount), 0) || 0
+        )}</td>
+        <td>${fmt(closure.expectedAmount)}</td>
+        <td>${fmt(closure.currentAmount)}</td>
+        <td class="${closure.difference === 0 ? 'green' : 'red'}">${fmt(closure.difference)}</td>
+      </tr>
+    </table>
+
+    <h2>Ventas del Día</h2>
+    ${
+      closure.sales?.length
+        ? closure.sales
+            .map(
+              (s, i) => `
+        <div>
+          <strong>#${i + 1}</strong> — ${new Date(s.timestamp).toLocaleTimeString()} (${s.payment?.method || 'Desconocido'})
+          <br>Cliente: ${s.customer?.name || '—'}
+          <br>Subtotal: ${fmt(s.subtotal)} | IVA: ${fmt(s.taxAmount)} | Total: ${fmt(s.total)} | Ganancia: ${fmt(s.profit)}
+          <ul>${(s.items || [])
+            .map((p) => `<li>${p.name} x${p.quantity} — $${p.price.toFixed(2)} c/u</li>`)
+            .join('')}</ul>
+        </div>`
+            )
+            .join('')
+        : '<p>Sin ventas registradas.</p>'
     }
 
-    const style = `
-      <style>
-        body{font-family: Arial, sans-serif; margin:24px; color:#111;}
-        h1{font-size:18px; margin-bottom:6px;}
-        table{width:100%; border-collapse: collapse; margin-top:10px;}
-        th,td{border:1px solid #ddd; padding:6px; text-align:right;}
-        th{text-align:left; background:#f8f8f8;}
-        .green{color:#16a34a;}
-        .red{color:#dc2626;}
-      </style>
-    `;
-
-    const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
-
-    const html = `
-      <!doctype html><html><head><meta charset="utf-8"><title>Cierre de Caja</title>${style}</head><body>
-      <h1>Cierre de Caja</h1>
-      <p>Abierta: ${new Date(closure.openedAt).toLocaleString()}<br/>
-      Cerrada: ${new Date(closure.closedAt).toLocaleString()}</p>
-      <table>
-        <tr><th>Inicial</th><th>Ventas Efectivo</th><th>Mov. Manuales</th><th>Esperado</th><th>Actual</th><th>Diferencia</th></tr>
-        <tr>
-          <td>${fmt(closure.openingAmount)}</td>
-          <td>${fmt(closure.salesByType?.cash || 0)}</td>
-          <td>${fmt(closure.movements?.reduce((a,m)=>a+(m.type==='income'?m.amount:-m.amount),0) || 0)}</td>
-          <td>${fmt(closure.expectedAmount)}</td>
-          <td>${fmt(closure.currentAmount)}</td>
-          <td class="${closure.difference===0?'green':'red'}">${fmt(closure.difference)}</td>
-        </tr>
-      </table>
-      <h3>Movimientos</h3>
-      ${closure.movements?.length
+    <h2>Movimientos Manuales</h2>
+    ${
+      closure.movements?.length
         ? `<ul>${closure.movements
             .map(
               (m) =>
-                `<li>${m.concept}: <strong class="${
+                `<li>${new Date(m.timestamp).toLocaleTimeString()} — ${m.concept}: <strong class="${
                   m.type === 'income' ? 'green' : 'red'
                 }">${m.type === 'income' ? '+' : '-'}${fmt(m.amount)}</strong></li>`
             )
             .join('')}</ul>`
-        : '<p>Sin movimientos manuales.</p>'}
-      </body></html>
-    `;
-    w.document.write(html);
-    w.document.close();
-    w.onload = () => w.print();
-  };
+        : '<p>Sin movimientos manuales.</p>'
+    }
+
+    </body></html>
+  `;
+  w.document.write(html);
+  w.document.close();
+  w.onload = () => w.print();
+};
+
 
   /* ------------------- Acciones ------------------- */
   const handleOpenRegister = () => {
@@ -279,6 +311,9 @@ dispatch({ type: 'OPEN_CASH_REGISTER', payload: fixedOpening });
       difference: parseFloat(difference.toFixed(2)),
       movements,
     };
+
+closure.sales = salesInTurn;
+
     dispatch({ type: 'CLOSE_CASH_REGISTER', payload: closure });
     toast({
       title: 'Caja cerrada',
@@ -480,46 +515,36 @@ dispatch({ type: 'OPEN_CASH_REGISTER', payload: fixedOpening });
     <p className="text-muted-foreground text-sm">No hay ventas registradas.</p>
   ) : (
     <div className="max-h-72 overflow-y-auto text-xs space-y-3">
-      {salesInTurn.map((venta, i) => (
-        <div key={i} className="border border-border/40 rounded-lg p-2 bg-background/40">
-          <div className="flex justify-between items-center border-b border-border/30 pb-1 mb-1">
-            <span className="font-semibold text-sm">Venta #{i + 1}</span>
-            <span className="text-muted-foreground text-[11px]">
-              {new Date(venta.timestamp).toLocaleTimeString()}
-            </span>
-          </div>
+     {salesInTurn.map((venta, i) => (
+  <div key={i} className="border border-border/40 rounded-lg p-3 bg-background/40">
+    <div className="flex justify-between items-center border-b border-border/30 pb-1 mb-1">
+      <span className="font-semibold text-sm">Venta #{i + 1}</span>
+      <span className="text-muted-foreground text-[11px]">
+        {new Date(venta.timestamp).toLocaleTimeString()}
+      </span>
+    </div>
 
-          <div className="flex justify-between text-sm mb-1">
-            <span>Método:</span>
-            <span className="capitalize">
-              {venta.payment?.method || venta.paymentMethod || "Desconocido"}
-            </span>
-          </div>
+    <div className="text-xs space-y-1">
+      <div className="flex justify-between"><span>Cliente:</span><span>{venta.customer?.name || '—'}</span></div>
+      <div className="flex justify-between"><span>Método:</span><span className="capitalize">{venta.payment?.method || venta.paymentMethod || 'Desconocido'}</span></div>
+      <div className="flex justify-between"><span>Subtotal:</span><span>${Number(venta.subtotal || 0).toFixed(2)}</span></div>
+      <div className="flex justify-between"><span>IVA:</span><span>${Number(venta.taxAmount || venta.tax || 0).toFixed(2)}</span></div>
+      <div className="flex justify-between"><span>Total:</span><span>${Number(venta.total || 0).toFixed(2)}</span></div>
+      <div className="flex justify-between text-green-500"><span>Ganancia:</span><span>+${Number(venta.profit || 0).toFixed(2)}</span></div>
+    </div>
 
-          <div className="flex justify-between text-sm mb-1">
-            <span>Total:</span>
-            <span>${Number(venta.total || 0).toFixed(2)}</span>
-          </div>
-<div className="flex justify-between text-xs mt-1">
-  <span>Subtotal:</span>
-  <span>${Number(venta.subtotal || 0).toFixed(2)}</span>
-</div>
-<div className="flex justify-between text-xs">
-  <span>IVA:</span>
-  <span>${Number(venta.taxAmount || venta.tax || 0).toFixed(2)}</span>
-</div>
+    {venta.items?.length > 0 && (
+      <ul className="pl-4 mt-2 list-disc text-muted-foreground space-y-0.5">
+        {venta.items.map((p, j) => (
+          <li key={j}>
+            {p.name} — x{p.quantity} — ${Number(p.price || 0).toFixed(2)} c/u
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+))}
 
-          {venta.items?.length > 0 && (
-            <ul className="pl-4 mt-1 list-disc text-muted-foreground space-y-0.5">
-              {venta.items.map((p, j) => (
-                <li key={j}>
-                  {p.name} — x{p.quantity} — ${Number(p.price || 0).toFixed(2)} c/u
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ))}
     </div>
   )}
 </div>
