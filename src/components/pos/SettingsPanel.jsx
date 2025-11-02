@@ -1,13 +1,24 @@
+// src/components/pos/SettingsPanel.jsx
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Save, Upload, Download, AlertTriangle,
-  Sun, Moon
+  Save,
+  Upload,
+  Download,
+  AlertTriangle,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
 import { usePOS } from '@/contexts/POSContext';
 import { toast } from '@/components/ui/use-toast';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -22,24 +33,25 @@ export default function SettingsPanel() {
   const handleSave = () => {
     dispatch({ type: 'UPDATE_SETTINGS', payload: settings });
     toast({
-      title: "Configuración guardada",
-      description: "Los datos de la empresa y documentos se actualizaron correctamente."
+      title: 'Configuración guardada',
+      description:
+        'Los datos de la empresa y documentos se actualizaron correctamente.'
     });
   };
 
   const handleSettingsChange = (key, value) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
+    setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleDocumentSettingsChange = (key, value) => {
-    setSettings(prev => ({
+    setSettings((prev) => ({
       ...prev,
       document: { ...prev.document, [key]: value }
     }));
   };
 
   const handleWatermarkChange = (key, value) => {
-    setSettings(prev => ({
+    setSettings((prev) => ({
       ...prev,
       document: {
         ...prev.document,
@@ -56,12 +68,21 @@ export default function SettingsPanel() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `FerrePOS_Backup_${new Date().toISOString().split('T')[0]}.json`;
+      link.download = `FerrePOS_Backup_${new Date()
+        .toISOString()
+        .split('T')[0]}.json`;
       link.click();
       URL.revokeObjectURL(url);
-      toast({ title: "Datos exportados", description: "Copia de seguridad creada correctamente." });
+      toast({
+        title: 'Datos exportados',
+        description: 'Copia de seguridad creada correctamente.'
+      });
     } catch (error) {
-      toast({ title: "Error al exportar", description: error.message, variant: "destructive" });
+      toast({
+        title: 'Error al exportar',
+        description: error.message,
+        variant: 'destructive'
+      });
     }
   };
 
@@ -74,9 +95,16 @@ export default function SettingsPanel() {
           const imported = JSON.parse(e.target.result);
           dispatch({ type: 'LOAD_DATA', payload: imported });
           setSettings(imported.settings || state.settings);
-          toast({ title: "Importación completada", description: "Los datos se restauraron correctamente." });
+          toast({
+            title: 'Importación completada',
+            description: 'Los datos se restauraron correctamente.'
+          });
         } catch {
-          toast({ title: "Error al importar", description: "Archivo de copia inválido.", variant: "destructive" });
+          toast({
+            title: 'Error al importar',
+            description: 'Archivo de copia inválido.',
+            variant: 'destructive'
+          });
         }
       };
       reader.readAsText(file);
@@ -89,39 +117,69 @@ export default function SettingsPanel() {
         <h1 className="text-2xl font-bold">Configuración del Sistema</h1>
         <div className="flex items-center gap-2">
           <Sun className="h-5 w-5" />
-          <Switch checked={theme === 'dark'} onCheckedChange={(c) => setTheme(c ? 'dark' : 'light')} />
+          <Switch
+            checked={theme === 'dark'}
+            onCheckedChange={(c) => setTheme(c ? 'dark' : 'light')}
+          />
           <Moon className="h-5 w-5" />
         </div>
       </div>
 
       {/* ==================== DATOS EMPRESA ==================== */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card-glass p-6 rounded-lg">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="card-glass p-6 rounded-lg"
+      >
         <h2 className="text-xl font-semibold mb-4">Datos de la Empresa</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label>Nombre Comercial</Label>
-            <Input value={settings.companyName} onChange={(e) => handleSettingsChange('companyName', e.target.value)} />
+            <Input
+              value={settings.companyName}
+              onChange={(e) =>
+                handleSettingsChange('companyName', e.target.value)
+              }
+            />
           </div>
           <div>
             <Label>Dirección</Label>
-            <Input value={settings.address} onChange={(e) => handleSettingsChange('address', e.target.value)} />
+            <Input
+              value={settings.address}
+              onChange={(e) => handleSettingsChange('address', e.target.value)}
+            />
           </div>
           <div>
             <Label>Teléfono</Label>
-            <Input value={settings.phone} onChange={(e) => handleSettingsChange('phone', e.target.value)} />
+            <Input
+              value={settings.phone}
+              onChange={(e) => handleSettingsChange('phone', e.target.value)}
+            />
           </div>
           <div>
             <Label>Email</Label>
-            <Input type="email" value={settings.email || ''} onChange={(e) => handleSettingsChange('email', e.target.value)} />
+            <Input
+              type="email"
+              value={settings.email || ''}
+              onChange={(e) => handleSettingsChange('email', e.target.value)}
+            />
           </div>
           <div>
             <Label>CUIT</Label>
-            <Input value={settings.cuit || ''} onChange={(e) => handleSettingsChange('cuit', e.target.value)} />
+            <Input
+              value={settings.cuit || ''}
+              onChange={(e) => handleSettingsChange('cuit', e.target.value)}
+            />
           </div>
           <div>
             <Label>Condición IVA</Label>
-            <Select value={settings.ivaCondition || 'CF'} onValueChange={(v) => handleSettingsChange('ivaCondition', v)}>
-              <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+            <Select
+              value={settings.ivaCondition || 'CF'}
+              onValueChange={(v) => handleSettingsChange('ivaCondition', v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="CF">Consumidor Final</SelectItem>
                 <SelectItem value="RI">Responsable Inscripto</SelectItem>
@@ -131,60 +189,115 @@ export default function SettingsPanel() {
             </Select>
           </div>
 
-          {/* ==== CAMPO MODIFICADO ==== */}
+          {/* ==== TASA DE IVA ==== */}
           <div>
             <Label>Tasa de IVA (%)</Label>
             <Input
-              type="text"
-              inputMode="decimal"
-              value={settings.taxRate?.toString() || ''}
-              onChange={(e) => handleSettingsChange('taxRate', e.target.value.replace(',', '.'))}
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              value={Number(settings.taxRate ?? 0)}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                handleSettingsChange('taxRate', isNaN(val) ? 0 : val);
+              }}
               onBlur={(e) => {
-                const val = parseFloat(e.target.value.replace(',', '.'));
+                const val = parseFloat(e.target.value);
                 handleSettingsChange('taxRate', isNaN(val) ? 0 : val);
               }}
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              Ingresá 0 si tus precios no incluyen IVA.
+            </p>
           </div>
         </div>
       </motion.div>
 
       {/* ==================== PERSONALIZACIÓN ==================== */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card-glass p-6 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4">Personalización de Documentos</h2>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="card-glass p-6 rounded-lg"
+      >
+        <h2 className="text-xl font-semibold mb-4">
+          Personalización de Documentos
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div>
             <Label>Logo URL</Label>
-            <Input placeholder="https://..." value={settings.document.logoUrl} onChange={(e) => handleDocumentSettingsChange('logoUrl', e.target.value)} />
+            <Input
+              placeholder="https://..."
+              value={settings.document.logoUrl}
+              onChange={(e) =>
+                handleDocumentSettingsChange('logoUrl', e.target.value)
+              }
+            />
           </div>
           <div>
             <Label>Pie de página legal</Label>
-            <Input value={settings.document.legalFooter} onChange={(e) => handleDocumentSettingsChange('legalFooter', e.target.value)} />
+            <Input
+              value={settings.document.legalFooter}
+              onChange={(e) =>
+                handleDocumentSettingsChange('legalFooter', e.target.value)
+              }
+            />
           </div>
           <div className="flex items-center gap-2 pt-6">
-            <Switch id="showQr" checked={settings.document.showQr} onCheckedChange={(c) => handleDocumentSettingsChange('showQr', c)} />
+            <Switch
+              id="showQr"
+              checked={settings.document.showQr}
+              onCheckedChange={(c) =>
+                handleDocumentSettingsChange('showQr', c)
+              }
+            />
             <Label htmlFor="showQr">Mostrar QR en comprobantes</Label>
           </div>
         </div>
 
-        <h3 className="text-lg font-semibold mt-6 mb-4">Marca de Agua (Remitos)</h3>
+        <h3 className="text-lg font-semibold mt-6 mb-4">
+          Marca de Agua (Remitos)
+        </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div>
             <Label>Texto</Label>
-            <Input placeholder="Ej: NO VÁLIDO" value={settings.document.watermark.text} onChange={(e) => handleWatermarkChange('text', e.target.value)} />
+            <Input
+              placeholder="Ej: NO VÁLIDO"
+              value={settings.document.watermark.text}
+              onChange={(e) =>
+                handleWatermarkChange('text', e.target.value)
+              }
+            />
           </div>
           <div>
             <Label>Opacidad ({settings.document.watermark.opacity})</Label>
-            <Slider value={[settings.document.watermark.opacity]} onValueChange={([v]) => handleWatermarkChange('opacity', v)} max={1} step={0.1} />
+            <Slider
+              value={[settings.document.watermark.opacity]}
+              onValueChange={([v]) => handleWatermarkChange('opacity', v)}
+              max={1}
+              step={0.1}
+            />
           </div>
           <div>
             <Label>Rotación ({settings.document.watermark.rotation}°)</Label>
-            <Slider value={[settings.document.watermark.rotation]} onValueChange={([v]) => handleWatermarkChange('rotation', v)} max={360} step={1} />
+            <Slider
+              value={[settings.document.watermark.rotation]}
+              onValueChange={([v]) => handleWatermarkChange('rotation', v)}
+              max={360}
+              step={1}
+            />
           </div>
         </div>
       </motion.div>
 
       {/* ==================== PARÁMETROS ==================== */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="card-glass p-6 rounded-lg">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="card-glass p-6 rounded-lg"
+      >
         <h2 className="text-xl font-semibold mb-4">Parámetros Generales</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -192,32 +305,59 @@ export default function SettingsPanel() {
               <AlertTriangle className="mr-2 h-4 w-4" />
               Umbral de Recompra (días)
             </Label>
-            <Input type="number" min="1" value={settings.restockThreshold || 30} onChange={(e) => handleSettingsChange('restockThreshold', parseInt(e.target.value) || 30)} />
+            <Input
+              type="number"
+              min="1"
+              value={settings.restockThreshold || 30}
+              onChange={(e) =>
+                handleSettingsChange(
+                  'restockThreshold',
+                  parseInt(e.target.value) || 30
+                )
+              }
+            />
           </div>
         </div>
       </motion.div>
 
       {/* ==================== BACKUP ==================== */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="card-glass p-6 rounded-lg">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="card-glass p-6 rounded-lg"
+      >
         <h2 className="text-xl font-semibold mb-4">Gestión de Datos</h2>
         <div className="flex flex-col md:flex-row gap-4">
           <Button onClick={exportData} variant="outline" className="flex-1">
-            <Download className="h-4 w-4 mr-2" />Exportar Backup
+            <Download className="h-4 w-4 mr-2" />
+            Exportar Backup
           </Button>
           <Button asChild variant="outline" className="flex-1">
             <label className="cursor-pointer flex items-center justify-center">
               <Upload className="h-4 w-4 mr-2" />
               Importar Backup
-              <input type="file" accept=".json" className="hidden" onChange={importData} />
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={importData}
+              />
             </label>
           </Button>
         </div>
       </motion.div>
 
       {/* ==================== GUARDAR ==================== */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="flex justify-end mt-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="flex justify-end mt-6"
+      >
         <Button size="lg" onClick={handleSave}>
-          <Save className="h-4 w-4 mr-2" />Guardar Configuración
+          <Save className="h-4 w-4 mr-2" />
+          Guardar Configuración
         </Button>
       </motion.div>
     </div>

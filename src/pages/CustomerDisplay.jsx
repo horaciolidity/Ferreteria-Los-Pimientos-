@@ -20,6 +20,9 @@ export default function CustomerDisplay() {
 
   const channelRef = useRef(null);
 
+  /* ================================================================
+     Helpers
+  ================================================================ */
   const calcTotal = (cart, discount, taxRate) => {
     const subtotal = (cart || []).reduce(
       (sum, it) => sum + Number(it.price || 0) * Number(it.quantity || 0),
@@ -30,7 +33,8 @@ export default function CustomerDisplay() {
       0
     );
     const base = subtotal - itemDiscounts;
-    const tax = base * Number(taxRate || 0);
+    const rate = Number(taxRate || 0);
+    const tax = base * rate;
     return base + tax - Number(discount || 0);
   };
 
@@ -45,51 +49,59 @@ export default function CustomerDisplay() {
       const paymentMethod = parsed.paymentMethod || 'cash';
       const paymentAmount = Number(parsed.paymentAmount || 0);
       const discount = Number(parsed.discount || 0);
-      const total = calcTotal(cart, discount, globalState?.settings?.taxRate || 0.21);
+      const taxRate = globalState?.settings?.taxRate || 0;
+      const total = calcTotal(cart, discount, taxRate);
       setDisplayData({ cart, currentCustomer, paymentMethod, paymentAmount, discount, total });
     } catch {
       // noop
     }
   };
 
-  // Montaje: título + precarga desde storage
+  /* ================================================================
+     Montaje: título + precarga desde storage
+  ================================================================ */
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.title = 'Pantalla Cliente - FerrePOS';
     }
     hydrateFromStorage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Suscripción a BroadcastChannel + fallback a storage
+  /* ================================================================
+     Suscripción a BroadcastChannel + fallback a storage
+  ================================================================ */
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const onChannelMessage = (event) => {
+    const handleMessage = (event) => {
       if (event?.data?.type !== 'STATE_UPDATE') return;
-      const { cart, currentCustomer, paymentMethod, paymentAmount, discount } = event.data;
-      const total = calcTotal(cart || [], discount || 0, globalState?.settings?.taxRate || 0.21);
+      const { cart, currentCustomer, paymentMethod, paymentAmount, discount, total } = event.data;
+
+      // 💡 Siempre usar el total real, no el pago recibido
+      const computedTotal =
+        total ?? calcTotal(cart || [], discount || 0, globalState?.settings?.taxRate || 0);
+
       setDisplayData({
         cart: cart || [],
         currentCustomer: currentCustomer || null,
         paymentMethod: paymentMethod || 'cash',
         paymentAmount: Number(paymentAmount || 0),
         discount: Number(discount || 0),
-        total,
+        total: computedTotal,
       });
     };
 
-    // 1) Intentar BroadcastChannel
+    // 1) BroadcastChannel
     try {
       if ('BroadcastChannel' in window) {
         channelRef.current = new BroadcastChannel('ferrePOS');
-        channelRef.current.addEventListener('message', onChannelMessage);
+        channelRef.current.addEventListener('message', handleMessage);
       }
     } catch {
-      // Si falla, seguimos con storage fallback
+      // fallback
     }
 
-    // 2) Fallback: escuchar cambios en localStorage (se dispara entre pestañas)
+    // 2) Fallback: cambios en localStorage
     const onStorage = (e) => {
       if (e.key !== STORAGE_KEY) return;
       hydrateFromStorage();
@@ -99,7 +111,7 @@ export default function CustomerDisplay() {
     return () => {
       try {
         if (channelRef.current) {
-          channelRef.current.removeEventListener('message', onChannelMessage);
+          channelRef.current.removeEventListener('message', handleMessage);
           channelRef.current.close();
         }
       } catch {
@@ -107,10 +119,11 @@ export default function CustomerDisplay() {
       }
       window.removeEventListener('storage', onStorage);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalState?.settings?.taxRate]);
 
-  // Derivados para render
+  /* ================================================================
+     Derivados para render
+  ================================================================ */
   const subtotal = useMemo(
     () =>
       (displayData.cart || []).reduce(
@@ -119,12 +132,14 @@ export default function CustomerDisplay() {
       ),
     [displayData.cart]
   );
+
   const totalItemDiscount = useMemo(
     () => (displayData.cart || []).reduce((sum, it) => sum + Number(it.itemDiscount || 0), 0),
     [displayData.cart]
   );
+
   const tax = useMemo(() => {
-    const rate = Number(globalState?.settings?.taxRate || 0.21);
+    const rate = Number(globalState?.settings?.taxRate || 0);
     return (subtotal - totalItemDiscount) * rate;
   }, [subtotal, totalItemDiscount, globalState?.settings?.taxRate]);
 
@@ -164,21 +179,32 @@ export default function CustomerDisplay() {
     }
   };
 
+  /* ================================================================
+     Render principal
+  ================================================================ */
   return (
     <div className="min-h-screen bg-background p-8 text-foreground">
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-5xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-5xl mx-auto"
+      >
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold">{globalState?.settings?.companyName || 'FerrePOS'}</h1>
+          <h1 className="text-5xl font-bold">
+            {globalState?.settings?.companyName || 'FerrePOS'}
+          </h1>
           <p className="text-2xl text-muted-foreground mt-2">Gracias por su compra</p>
         </div>
 
         {displayData.currentCustomer && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card-glass p-6 rounded-lg mb-6 text-center">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="card-glass p-6 rounded-lg mb-6 text-center"
+          >
             <h2 className="text-2xl font-semibold">
               Cliente:{' '}
-              <span className="text-primary">
-                {displayData.currentCustomer?.name}
-              </span>
+              <span className="text-primary">{displayData.currentCustomer?.name}</span>
             </h2>
           </motion.div>
         )}
@@ -219,12 +245,11 @@ export default function CustomerDisplay() {
                         <div className="flex-1">
                           <h3 className="font-medium">{item.name}</h3>
                           <p className="text-muted-foreground text-base">
-                            {Number(item.quantity || 0)} {item.unit} × ${Number(item.price || 0).toFixed(2)}
+                            {Number(item.quantity || 0)} {item.unit} × $
+                            {Number(item.price || 0).toFixed(2)}
                           </p>
                         </div>
-                        <p className="font-semibold text-xl">
-                          ${line.toFixed(2)}
-                        </p>
+                        <p className="font-semibold text-xl">${line.toFixed(2)}</p>
                       </motion.div>
                     );
                   })
@@ -246,26 +271,43 @@ export default function CustomerDisplay() {
                 {(totalItemDiscount > 0 || Number(displayData.discount) > 0) && (
                   <div className="flex justify-between text-green-600">
                     <span>Descuentos:</span>
-                    <span>-${(totalItemDiscount + Number(displayData.discount || 0)).toFixed(2)}</span>
+                    <span>
+                      -${(totalItemDiscount + Number(displayData.discount || 0)).toFixed(2)}
+                    </span>
                   </div>
                 )}
 
-                <div className="flex justify-between text-muted-foreground">
-                  <span>IVA ({Number(globalState?.settings?.taxRate || 0.21) * 100}%)</span>
-                  <span>${tax.toFixed(2)}</span>
-                </div>
+                {globalState?.settings?.taxRate > 0 ? (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>
+                      IVA ({(Number(globalState?.settings?.taxRate) * 100).toFixed(0)}%)
+                    </span>
+                    <span>${tax.toFixed(2)}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>IVA:</span>
+                    <span>$0.00</span>
+                  </div>
+                )}
 
                 <div className="border-t border-border pt-4 mt-4">
                   <div className="flex justify-between text-4xl font-bold">
                     <span>Total:</span>
-                    <span className="rounded-lg px-2">${Number(displayData.total || 0).toFixed(2)}</span>
+                    <span className="rounded-lg px-2">
+                      ${Number(displayData.total || 0).toFixed(2)}
+                    </span>
                   </div>
                 </div>
               </div>
             </div>
 
             {Number(displayData.paymentAmount) > 0 && (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card-glass p-6 rounded-lg">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="card-glass p-6 rounded-lg"
+              >
                 <h2 className="text-3xl font-semibold mb-4 flex items-center">
                   {getPaymentIcon()}
                   <span className="ml-3">Pago</span>

@@ -545,7 +545,7 @@ const calcDetail = (cart, discount, taxRate) => {
   const subtotal = calcSubtotal(cart);
   const itemDiscounts = calcItemDiscounts(cart);
   const base = subtotal - itemDiscounts;
-  const taxAmount = Number((base * Number(taxRate || 0)).toFixed(2));
+  const taxAmount = Number((base * Number(taxRate ?? 0)).toFixed(2));
   const total = Number((base + taxAmount - Number(discount || 0)).toFixed(2));
   return { subtotal, itemDiscounts, base, taxAmount, total };
 };
@@ -574,6 +574,9 @@ export function POSProvider({ children }) {
             },
           },
         };
+
+        mergedSettings.taxRate = Number(mergedSettings.taxRate ?? 0.21);
+
         dispatch({
           type: 'LOAD_DATA',
           payload: {
@@ -806,7 +809,7 @@ export function POSProvider({ children }) {
     setCustomer,
     setCustomerById,
     calculateSubtotal: () => calcSubtotal(state.cart),
-    calculateTax: () => Number(calcSubtotal(state.cart) * Number(state.settings.taxRate || 0)),
+    calculateTax: () => Number(calcSubtotal(state.cart) * Number(state.settings.taxRate ?? 0)),
     calculateTotal,
     calculateProfit,
     calculateDetail,
