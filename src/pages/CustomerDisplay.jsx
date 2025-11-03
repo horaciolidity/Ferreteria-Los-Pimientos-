@@ -7,7 +7,7 @@ import { usePOS } from '@/contexts/POSContext';
 const STORAGE_KEY = 'ferrePOS_data';
 
 export default function CustomerDisplay() {
-  const { state: globalState } = usePOS(); // usamos settings (IVA, nombre empresa, etc.)
+  const { state: globalState } = usePOS();
 
   const [displayData, setDisplayData] = useState({
     cart: [],
@@ -68,48 +68,58 @@ export default function CustomerDisplay() {
   }, []);
 
   /* ================================================================
-     Suscripción a BroadcastChannel + fallback a storage
+     Suscripción a BroadcastChannel + fallback a storage (blindada)
   ================================================================ */
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const handleMessage = (event) => {
-  if (event?.data?.type !== 'STATE_UPDATE') return;
-  const { cart, currentCustomer, paymentMethod, paymentAmount, discount, total } = event.data;
+      if (event?.data?.type !== 'STATE_UPDATE') return;
 
-  setDisplayData((prev) => {
-    // 🧠 Mantener carrito anterior si llega vacío (por cambio de método o monto)
-    const updatedCart =
-      Array.isArray(cart) && cart.length > 0 ? cart : prev.cart;
+      const { cart, currentCustomer, paymentMethod, paymentAmount, discount, total } = event.data;
 
-    // 🧮 Calcular total solo si no viene en el mensaje
-    const computedTotal =
-      typeof total === 'number'
-        ? total
-        : calcTotal(updatedCart, discount ?? prev.discount, globalState?.settings?.taxRate ?? 0);
+      setDisplayData((prev) => {
+        const isCartValid = Array.isArray(cart) && cart.length > 0;
+        const shouldReset =
+          Array.isArray(cart) && cart.length === 0 && Number(total || 0) === 0;
 
-    return {
-      cart: updatedCart,
-      currentCustomer: currentCustomer ?? prev.currentCustomer,
-      paymentMethod: paymentMethod ?? prev.paymentMethod,
-      paymentAmount: Number(paymentAmount ?? prev.paymentAmount ?? 0),
-      discount: Number(discount ?? prev.discount ?? 0),
-      total: computedTotal,
+        // ✅ Mantener el carrito anterior si llega vacío pero no hay reset
+        const updatedCart = shouldReset ? [] : isCartValid ? cart : prev.cart;
+
+        const computedTotal =
+          typeof total === 'number'
+            ? total
+            : calcTotal(
+                updatedCart,
+                discount ?? prev.discount,
+                globalState?.settings?.taxRate ?? 0
+              );
+
+        return {
+          cart: updatedCart,
+          currentCustomer:
+            currentCustomer !== undefined
+              ? currentCustomer
+              : prev.currentCustomer,
+          paymentMethod: paymentMethod ?? prev.paymentMethod,
+          paymentAmount: Number(paymentAmount ?? prev.paymentAmount ?? 0),
+          discount: Number(discount ?? prev.discount ?? 0),
+          total: computedTotal,
+        };
+      });
     };
-  });
-};
 
-    // 1) BroadcastChannel
+    // 1️⃣ Suscripción al canal
     try {
       if ('BroadcastChannel' in window) {
         channelRef.current = new BroadcastChannel('ferrePOS');
         channelRef.current.addEventListener('message', handleMessage);
       }
-    } catch {
-      // fallback
+    } catch (err) {
+      console.warn('BroadcastChannel fallback:', err);
     }
 
-    // 2) Fallback: cambios en localStorage
+    // 2️⃣ Fallback por localStorage
     const onStorage = (e) => {
       if (e.key !== STORAGE_KEY) return;
       hydrateFromStorage();
