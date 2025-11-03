@@ -626,34 +626,43 @@ export function POSProvider({ children }) {
     return () => window.removeEventListener('pos:set-customer', handler);
   }, []);
 
- useEffect(() => {
-  // Guardar datos
-  const toSave = { ...state, cart: undefined };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+useEffect(() => {
+  try {
+    // Guardar datos sin incluir el carrito (para no duplicar en storage)
+    const toSave = { ...state, cart: undefined };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
 
-  // Si el carrito está vacío y no hay cliente ni pago, no enviar nada
-  const hasActiveCart =
-    Array.isArray(state.cart) && state.cart.length > 0;
+    const hasCart = Array.isArray(state.cart) && state.cart.length > 0;
+    const hasPayment = Number(state.paymentAmount || 0) > 0;
+    const shouldBroadcast = hasCart || hasPayment;
 
-  if (!hasActiveCart && !state.paymentAmount) return;
+    if (!shouldBroadcast) return;
 
-  // Calcular totales
-  const channel = new BroadcastChannel('ferrePOS');
-  const d = calcDetail(state.cart, state.discount, state.settings.taxRate);
+    const channel = new BroadcastChannel('ferrePOS');
+    const d = calcDetail(state.cart, state.discount, state.settings.taxRate);
 
-  // Enviar actualización
-  channel.postMessage({
-    type: 'STATE_UPDATE',
-    cart: hasActiveCart ? state.cart : [],
-    currentCustomer: hasActiveCart ? state.currentCustomer : null,
-    paymentMethod: state.paymentMethod,
-    paymentAmount: Number(state.paymentAmount || 0),
-    discount: Number(state.discount || 0),
-    total: hasActiveCart ? d.total : 0,
-  });
+    // 🔒 Blindado: nunca enviar cart vacío salvo que se haya limpiado explícitamente
+    channel.postMessage({
+      type: 'STATE_UPDATE',
+      cart: hasCart ? state.cart : undefined,
+      currentCustomer: hasCart ? state.currentCustomer : undefined,
+      paymentMethod: state.paymentMethod || 'cash',
+      paymentAmount: Number(state.paymentAmount || 0),
+      discount: Number(state.discount || 0),
+      total: hasCart ? d.total : undefined,
+    });
 
-  channel.close();
-}, [state.cart, state.currentCustomer, state.paymentMethod, state.paymentAmount, state.discount]);
+    channel.close();
+  } catch (err) {
+    console.error('Broadcast error:', err);
+  }
+}, [
+  state.cart,
+  state.currentCustomer,
+  state.paymentMethod,
+  state.paymentAmount,
+  state.discount,
+]);
 
   /* --------------------- API expuesta --------------------- */
   const addToCart = (product, quantity = 1, customPrice = null, note = '') => {
