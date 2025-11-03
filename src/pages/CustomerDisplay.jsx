@@ -74,22 +74,30 @@ export default function CustomerDisplay() {
     if (typeof window === 'undefined') return;
 
     const handleMessage = (event) => {
-      if (event?.data?.type !== 'STATE_UPDATE') return;
-      const { cart, currentCustomer, paymentMethod, paymentAmount, discount, total } = event.data;
+  if (event?.data?.type !== 'STATE_UPDATE') return;
+  const { cart, currentCustomer, paymentMethod, paymentAmount, discount, total } = event.data;
 
-      // 💡 Siempre usar el total real, no el pago recibido
-      const computedTotal =
-        total ?? calcTotal(cart || [], discount || 0, globalState?.settings?.taxRate || 0);
+  setDisplayData((prev) => {
+    // 🧠 Mantener carrito anterior si llega vacío (por cambio de método o monto)
+    const updatedCart =
+      Array.isArray(cart) && cart.length > 0 ? cart : prev.cart;
 
-      setDisplayData({
-        cart: cart || [],
-        currentCustomer: currentCustomer || null,
-        paymentMethod: paymentMethod || 'cash',
-        paymentAmount: Number(paymentAmount || 0),
-        discount: Number(discount || 0),
-        total: computedTotal,
-      });
+    // 🧮 Calcular total solo si no viene en el mensaje
+    const computedTotal =
+      typeof total === 'number'
+        ? total
+        : calcTotal(updatedCart, discount ?? prev.discount, globalState?.settings?.taxRate ?? 0);
+
+    return {
+      cart: updatedCart,
+      currentCustomer: currentCustomer ?? prev.currentCustomer,
+      paymentMethod: paymentMethod ?? prev.paymentMethod,
+      paymentAmount: Number(paymentAmount ?? prev.paymentAmount ?? 0),
+      discount: Number(discount ?? prev.discount ?? 0),
+      total: computedTotal,
     };
+  });
+};
 
     // 1) BroadcastChannel
     try {
