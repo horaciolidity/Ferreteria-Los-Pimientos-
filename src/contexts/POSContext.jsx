@@ -626,23 +626,34 @@ export function POSProvider({ children }) {
     return () => window.removeEventListener('pos:set-customer', handler);
   }, []);
 
-  useEffect(() => {
-    const toSave = { ...state, cart: undefined };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+ useEffect(() => {
+  // Guardar datos
+  const toSave = { ...state, cart: undefined };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
 
-    const channel = new BroadcastChannel('ferrePOS');
-    const d = calcDetail(state.cart, state.discount, state.settings.taxRate);
-    channel.postMessage({
-      type: 'STATE_UPDATE',
-      cart: state.cart,
-      currentCustomer: state.currentCustomer,
-      paymentMethod: state.paymentMethod,
-      paymentAmount: state.paymentAmount,
-      discount: state.discount,
-      total: d.total,
-    });
-    channel.close();
-  }, [state]);
+  // Si el carrito está vacío y no hay cliente ni pago, no enviar nada
+  const hasActiveCart =
+    Array.isArray(state.cart) && state.cart.length > 0;
+
+  if (!hasActiveCart && !state.paymentAmount) return;
+
+  // Calcular totales
+  const channel = new BroadcastChannel('ferrePOS');
+  const d = calcDetail(state.cart, state.discount, state.settings.taxRate);
+
+  // Enviar actualización
+  channel.postMessage({
+    type: 'STATE_UPDATE',
+    cart: hasActiveCart ? state.cart : [],
+    currentCustomer: hasActiveCart ? state.currentCustomer : null,
+    paymentMethod: state.paymentMethod,
+    paymentAmount: Number(state.paymentAmount || 0),
+    discount: Number(state.discount || 0),
+    total: hasActiveCart ? d.total : 0,
+  });
+
+  channel.close();
+}, [state.cart, state.currentCustomer, state.paymentMethod, state.paymentAmount, state.discount]);
 
   /* --------------------- API expuesta --------------------- */
   const addToCart = (product, quantity = 1, customPrice = null, note = '') => {
