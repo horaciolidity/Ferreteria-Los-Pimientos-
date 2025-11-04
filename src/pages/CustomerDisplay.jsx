@@ -250,7 +250,7 @@ const {
 
             <div className="space-y-4 max-h-[60vh] overflow-y-auto scrollbar-thin">
               <AnimatePresence initial={false}>
-                {(!displayData.cart || displayData.cart.length === 0) ? (
+                  {(!displayData.cart || displayData.cart.length === 0) && Number(displayData.total) === 0 ? (
                   <motion.div
                     key="empty"
                     initial={{ opacity: 0 }}

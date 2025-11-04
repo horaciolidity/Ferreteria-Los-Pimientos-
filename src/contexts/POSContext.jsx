@@ -635,9 +635,16 @@ useEffect(() => {
   const hasActiveCart = Array.isArray(state.cart) && state.cart.length > 0;
   const detail = calcDetail(state.cart, state.discount, state.settings.taxRate);
 
+  // 🚫 Evitar enviar actualizaciones incompletas (cuando el carrito está vacío pero hay pago activo)
+  const shouldSendEmpty =
+    !hasActiveCart &&
+    Number(state.paymentAmount || 0) === 0 &&
+    !state.currentCustomer &&
+    Number(detail.total || 0) === 0;
+
   channel.postMessage({
     type: 'STATE_UPDATE',
-    cart: state.cart ?? [],
+    cart: shouldSendEmpty ? [] : state.cart ?? [],
     currentCustomer: state.currentCustomer ?? null,
     paymentMethod: state.paymentMethod ?? 'cash',
     paymentAmount: Number(state.paymentAmount || 0),
@@ -645,7 +652,7 @@ useEffect(() => {
     subtotal: Number(detail.subtotal || 0),
     taxAmount: Number(detail.taxAmount || 0),
     total: Number(detail.total || 0),
-    isEmpty: !hasActiveCart,
+    isEmpty: shouldSendEmpty,
   });
 
   channel.close();
@@ -657,6 +664,7 @@ useEffect(() => {
   state.discount,
   state.settings.taxRate,
 ]);
+
 
 
 
