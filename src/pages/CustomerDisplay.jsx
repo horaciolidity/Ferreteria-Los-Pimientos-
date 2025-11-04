@@ -76,37 +76,50 @@ export default function CustomerDisplay() {
     const handleMessage = (event) => {
       if (event?.data?.type !== 'STATE_UPDATE') return;
 
-      const { cart, currentCustomer, paymentMethod, paymentAmount, discount, total } = event.data;
+const {
+  cart,
+  currentCustomer,
+  paymentMethod,
+  paymentAmount,
+  discount,
+  subtotal,
+  taxAmount,
+  total,
+  isEmpty,
+} = event.data;
 
       setDisplayData((prev) => {
-        const isCartValid = Array.isArray(cart) && cart.length > 0;
-        const shouldReset =
-          Array.isArray(cart) && cart.length === 0 && Number(total || 0) === 0;
+  const isCartValid = Array.isArray(cart) && cart.length > 0;
+  const shouldReset =
+    Array.isArray(cart) && cart.length === 0 && Number(total || 0) === 0;
 
-        // ✅ Mantener el carrito anterior si llega vacío pero no hay reset
-        const updatedCart = shouldReset ? [] : isCartValid ? cart : prev.cart;
+  // ✅ Mantener el carrito anterior si llega vacío pero no hay reset
+  const updatedCart = shouldReset ? [] : isCartValid ? cart : prev.cart;
 
-        const computedTotal =
-          typeof total === 'number'
-            ? total
-            : calcTotal(
-                updatedCart,
-                discount ?? prev.discount,
-                globalState?.settings?.taxRate ?? 0
-              );
+  const computedTotal =
+    typeof total === 'number'
+      ? total
+      : calcTotal(
+          updatedCart,
+          discount ?? prev.discount,
+          globalState?.settings?.taxRate ?? 0
+        );
 
-        return {
-          cart: updatedCart,
-          currentCustomer:
-            currentCustomer !== undefined
-              ? currentCustomer
-              : prev.currentCustomer,
-          paymentMethod: paymentMethod ?? prev.paymentMethod,
-          paymentAmount: Number(paymentAmount ?? prev.paymentAmount ?? 0),
-          discount: Number(discount ?? prev.discount ?? 0),
-          total: computedTotal,
-        };
-      });
+  return {
+    cart: isEmpty ? [] : updatedCart,
+    currentCustomer:
+      currentCustomer !== undefined
+        ? currentCustomer
+        : prev.currentCustomer,
+    paymentMethod: paymentMethod ?? prev.paymentMethod,
+    paymentAmount: Number(paymentAmount ?? prev.paymentAmount ?? 0),
+    discount: Number(discount ?? prev.discount ?? 0),
+    subtotal: Number(subtotal ?? prev.subtotal ?? 0),
+    taxAmount: Number(taxAmount ?? prev.taxAmount ?? 0),
+    total: Number(total ?? computedTotal ?? 0),
+  };
+});
+
     };
 
     // 1️⃣ Suscripción al canal

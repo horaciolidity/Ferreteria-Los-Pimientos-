@@ -627,42 +627,38 @@ export function POSProvider({ children }) {
   }, []);
 
 useEffect(() => {
-  try {
-    // Guardar datos sin incluir el carrito (para no duplicar en storage)
-    const toSave = { ...state, cart: undefined };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+  const toSave = { ...state, cart: undefined };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
 
-    const hasCart = Array.isArray(state.cart) && state.cart.length > 0;
-    const hasPayment = Number(state.paymentAmount || 0) > 0;
-    const shouldBroadcast = hasCart || hasPayment;
+  const channel = new BroadcastChannel('ferrePOS');
 
-    if (!shouldBroadcast) return;
+  const hasActiveCart = Array.isArray(state.cart) && state.cart.length > 0;
+  const detail = calcDetail(state.cart, state.discount, state.settings.taxRate);
 
-    const channel = new BroadcastChannel('ferrePOS');
-    const d = calcDetail(state.cart, state.discount, state.settings.taxRate);
+  channel.postMessage({
+    type: 'STATE_UPDATE',
+    cart: state.cart ?? [],
+    currentCustomer: state.currentCustomer ?? null,
+    paymentMethod: state.paymentMethod ?? 'cash',
+    paymentAmount: Number(state.paymentAmount || 0),
+    discount: Number(state.discount || 0),
+    subtotal: Number(detail.subtotal || 0),
+    taxAmount: Number(detail.taxAmount || 0),
+    total: Number(detail.total || 0),
+    isEmpty: !hasActiveCart,
+  });
 
-    // 🔒 Blindado: nunca enviar cart vacío salvo que se haya limpiado explícitamente
-    channel.postMessage({
-      type: 'STATE_UPDATE',
-      cart: hasCart ? state.cart : undefined,
-      currentCustomer: hasCart ? state.currentCustomer : undefined,
-      paymentMethod: state.paymentMethod || 'cash',
-      paymentAmount: Number(state.paymentAmount || 0),
-      discount: Number(state.discount || 0),
-      total: hasCart ? d.total : undefined,
-    });
-
-    channel.close();
-  } catch (err) {
-    console.error('Broadcast error:', err);
-  }
+  channel.close();
 }, [
   state.cart,
   state.currentCustomer,
   state.paymentMethod,
   state.paymentAmount,
   state.discount,
+  state.settings.taxRate,
 ]);
+
+
 
   /* --------------------- API expuesta --------------------- */
   const addToCart = (product, quantity = 1, customPrice = null, note = '') => {
