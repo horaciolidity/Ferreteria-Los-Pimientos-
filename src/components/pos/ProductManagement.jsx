@@ -154,6 +154,33 @@ export default function ProductManagement() {
     }
   };
 
+  // CORRECCIÓN CRÍTICA: Select de Proveedor corregido
+  const ProviderSelect = () => (
+    <Select 
+      value={newProduct.providerId || "none"} 
+      onValueChange={(value) => {
+        const updated = { 
+          ...newProduct, 
+          providerId: value === "none" ? "" : value 
+        };
+        setNewProduct(updated);
+        validateInRealTime(updated, editingProduct?.id);
+      }}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Seleccionar proveedor..." />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">Sin proveedor</SelectItem>
+        {state.providers.map(p => (
+          <SelectItem key={p.id} value={p.id}>
+            {p.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+
   // Exportación mejorada
   const exportProducts = (format = 'json') => {
     try {
@@ -372,25 +399,7 @@ export default function ProductManagement() {
                 </div>
                 <div>
                   <Label htmlFor="providerId">Proveedor</Label>
-                  <Select 
-                    value={newProduct.providerId} 
-                    onValueChange={(value) => {
-                      const updated = { ...newProduct, providerId: value };
-                      setNewProduct(updated);
-                      validateInRealTime(updated, editingProduct?.id);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar..."/>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {state.providers.map(p => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <ProviderSelect />
                 </div>
                 <div>
                   <Label htmlFor="minStock">Stock mínimo</Label>
