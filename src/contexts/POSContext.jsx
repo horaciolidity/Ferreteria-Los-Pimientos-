@@ -8,6 +8,68 @@ const POSContext = createContext(null);
 /* --------------------- Datos iniciales --------------------- */
 const STORAGE_KEY = 'ferrePOS_data';
 
+// Función para validar y limpiar productos
+const validateAndCleanProducts = (products) => {
+  const validProducts = [];
+  const seenCodes = new Set();
+  const duplicates = [];
+  const invalidProducts = [];
+
+  products.forEach(product => {
+    // Validar campos básicos
+    if (!product.id || !product.name || !product.code) {
+      invalidProducts.push({ ...product, error: 'Faltan campos obligatorios (id, name, code)' });
+      console.warn('Producto inválido omitido:', product);
+      return;
+    }
+
+    // Verificar código duplicado
+    if (seenCodes.has(product.code)) {
+      duplicates.push(product.code);
+      invalidProducts.push({ ...product, error: `Código duplicado: ${product.code}` });
+      return;
+    }
+    seenCodes.add(product.code);
+
+    // Asegurar tipos correctos
+    const cleanProduct = {
+      ...product,
+      price: Math.max(0, Number(product.price) || 0),
+      cost: Math.max(0, Number(product.cost) || 0),
+      stock: Math.max(0, Number(product.stock) || 0),
+      minStock: Math.max(0, Number(product.minStock) || 0),
+      unit: product.unit || 'unidad',
+      category: product.category || '',
+      providerId: product.providerId || '',
+      // Asegurar que el nombre esté limpio
+      name: (product.name || '').trim(),
+      code: (product.code || '').trim()
+    };
+
+    // Validaciones adicionales
+    if (cleanProduct.price < cleanProduct.cost) {
+      console.warn(`Producto ${cleanProduct.name} tiene precio menor al costo`);
+    }
+
+    if (cleanProduct.stock < 0) {
+      console.warn(`Producto ${cleanProduct.name} tiene stock negativo, ajustado a 0`);
+      cleanProduct.stock = 0;
+    }
+
+    validProducts.push(cleanProduct);
+  });
+
+  // Log de problemas encontrados
+  if (duplicates.length > 0) {
+    console.warn('Productos duplicados omitidos:', duplicates);
+  }
+  if (invalidProducts.length > 0) {
+    console.warn('Productos inválidos omitidos:', invalidProducts);
+  }
+
+  return validProducts;
+};
+
 const initialState = {
   cart: [],
   products: [],
@@ -137,10 +199,45 @@ function posReducer(state, action) {
     case 'SET_DISCOUNT':       return { ...state, discount: Number(action.payload || 0) };
     case 'SET_NOTES':          return { ...state, notes: action.payload || '' };
 
-    case 'ADD_PRODUCT':
-      return { ...state, products: [...state.products, { ...action.payload, id: Date.now().toString() }] };
-    case 'UPDATE_PRODUCT':
-      return { ...state, products: state.products.map(p => (p.id === action.payload.id ? { ...p, ...action.payload.updates } : p)) };
+    case 'ADD_PRODUCT': {
+      const newProduct = action.payload;
+      // Validar producto antes de agregar
+      const validationErrors = validateProduct(newProduct, state.products);
+      if (validationErrors.length > 0) {
+        console.error('Error al agregar producto:', validationErrors);
+        toast({
+          title: 'Error de validación',
+          description: validationErrors.join(', '),
+          variant: 'destructive'
+        });
+        return state;
+      }
+      return { ...state, products: [...state.products, { ...newProduct, id: Date.now().toString() }] };
+    }
+    
+    case 'UPDATE_PRODUCT': {
+      const { id, updates } = action.payload;
+      // Validar producto antes de actualizar
+      const existingProduct = state.products.find(p => p.id === id);
+      const updatedProduct = { ...existingProduct, ...updates };
+      const validationErrors = validateProduct(updatedProduct, state.products, id);
+      
+      if (validationErrors.length > 0) {
+        console.error('Error al actualizar producto:', validationErrors);
+        toast({
+          title: 'Error de validación',
+          description: validationErrors.join(', '),
+          variant: 'destructive'
+        });
+        return state;
+      }
+      
+      return { 
+        ...state, 
+        products: state.products.map(p => (p.id === id ? { ...p, ...updates } : p)) 
+      };
+    }
+    
     case 'DELETE_PRODUCT':
       return { ...state, products: state.products.filter(p => p.id !== action.payload) };
 
@@ -148,16 +245,15 @@ function posReducer(state, action) {
       return { ...state, customers: [...state.customers, { ...action.payload, id: Date.now().toString(), balance: 0 }] };
     case 'UPDATE_CUSTOMER':
       return { ...state, customers: state.customers.map(c => (c.id === action.payload.id ? { ...c, ...action.payload.updates } : c)) };
-      case 'DELETE_CUSTOMER': {
-  const id = action.payload;
-  return {
-    ...state,
-    customers: state.customers.filter(c => c.id !== id),
-    // Limpia cualquier referencia activa al cliente actual
-    currentCustomer: state.currentCustomer?.id === id ? null : state.currentCustomer,
-  };
-}
-
+      
+    case 'DELETE_CUSTOMER': {
+      const id = action.payload;
+      return {
+        ...state,
+        customers: state.customers.filter(c => c.id !== id),
+        currentCustomer: state.currentCustomer?.id === id ? null : state.currentCustomer,
+      };
+    }
 
     case 'ADD_PROVIDER':
       return { ...state, providers: [...state.providers, { ...action.payload, id: Date.now().toString() }] };
@@ -174,26 +270,27 @@ function posReducer(state, action) {
 
     /* ------ Caja ------ */
     case 'OPEN_CASH_REGISTER':
-  return {
-    ...state,
-    cashRegister: {
-      isOpen: true,
-      openedAt: new Date().toISOString(),
-      openingAmount: Number(action.payload || 0),
-      currentAmount: Number(action.payload || 0),
-      salesByType: { cash: 0, transfer: 0, mixed: 0, credit: 0, card: 0, account: 0 },
-      cashFromMixed: 0,
-      movements: [
-        {
-          id: cryptoRandom(),
-          type: 'opening',
-          concept: 'Apertura',
-          amount: Number(action.payload || 0),
-          timestamp: new Date().toISOString(),
+      return {
+        ...state,
+        cashRegister: {
+          isOpen: true,
+          openedAt: new Date().toISOString(),
+          openingAmount: Number(action.payload || 0),
+          currentAmount: Number(action.payload || 0),
+          salesByType: { cash: 0, transfer: 0, mixed: 0, credit: 0, card: 0, account: 0 },
+          cashFromMixed: 0,
+          movements: [
+            {
+              id: cryptoRandom(),
+              type: 'opening',
+              concept: 'Apertura',
+              amount: Number(action.payload || 0),
+              timestamp: new Date().toISOString(),
+            },
+          ],
         },
-      ],
-    },
-  };
+      };
+      
     case 'REGISTER_SALE': {
       const sale = action.payload;
       if (!state.cashRegister.isOpen) return state;
@@ -247,7 +344,6 @@ function posReducer(state, action) {
       };
     }
 
-
     case 'ADD_CASH_MOVEMENT': {
       if (!state.cashRegister.isOpen) return state;
       const { type, concept, amount } = action.payload;
@@ -265,79 +361,78 @@ function posReducer(state, action) {
       };
     }
 
- case 'CLOSE_CASH_REGISTER': {
-  const cr = state.cashRegister;
-  const { openingAmount, movements, salesByType, currentAmount, openedAt, cashFromMixed } = cr;
+    case 'CLOSE_CASH_REGISTER': {
+      const cr = state.cashRegister;
+      const { openingAmount, movements, salesByType, currentAmount, openedAt, cashFromMixed } = cr;
 
-  const cashMovements = movements.reduce((acc, m) => {
-    if (m.type === 'income') return acc + Number(m.amount || 0);
-    if (m.type === 'expense') return acc - Number(m.amount || 0);
-    return acc;
-  }, 0);
+      const cashMovements = movements.reduce((acc, m) => {
+        if (m.type === 'income') return acc + Number(m.amount || 0);
+        if (m.type === 'expense') return acc - Number(m.amount || 0);
+        return acc;
+      }, 0);
 
-  const expectedAmount =
-    Number(openingAmount || 0) +
-    Number(salesByType.cash || 0) +
-    Number(cashFromMixed || 0) +
-    Number(cashMovements || 0);
+      const expectedAmount =
+        Number(openingAmount || 0) +
+        Number(salesByType.cash || 0) +
+        Number(cashFromMixed || 0) +
+        Number(cashMovements || 0);
 
-  const difference = Number(currentAmount || 0) - expectedAmount;
+      const difference = Number(currentAmount || 0) - expectedAmount;
 
-  const inTurn = state.sales.filter(
-    (s) => openedAt && new Date(s.timestamp) >= new Date(openedAt) && s.type !== 'quote'
-  );
+      const inTurn = state.sales.filter(
+        (s) => openedAt && new Date(s.timestamp) >= new Date(openedAt) && s.type !== 'quote'
+      );
 
-  const subtotalTurno = inTurn.reduce(
-    (s, x) => s + Number(x.subtotal || 0) - Number(x.itemDiscounts || 0) - Number(x.discount || 0),
-    0
-  );
-  const ivaTurno = inTurn.reduce((s, x) => s + Number(x.taxAmount || 0), 0);
-  const totalTurno = inTurn.reduce((s, x) => s + Number(x.total || 0), 0);
-  const gananciaNetaTurno = inTurn.reduce((s, x) => s + Number(x.profit || 0), 0);
+      const subtotalTurno = inTurn.reduce(
+        (s, x) => s + Number(x.subtotal || 0) - Number(x.itemDiscounts || 0) - Number(x.discount || 0),
+        0
+      );
+      const ivaTurno = inTurn.reduce((s, x) => s + Number(x.taxAmount || 0), 0);
+      const totalTurno = inTurn.reduce((s, x) => s + Number(x.total || 0), 0);
+      const gananciaNetaTurno = inTurn.reduce((s, x) => s + Number(x.profit || 0), 0);
 
-  const desgloseMetodo = inTurn.reduce((acc, s) => {
-    const m = s?.payment?.method ?? s?.paymentMethod ?? 'desconocido';
-    acc[m] = (acc[m] || 0) + Number(s.total || 0);
-    return acc;
-  }, {});
+      const desgloseMetodo = inTurn.reduce((acc, s) => {
+        const m = s?.payment?.method ?? s?.paymentMethod ?? 'desconocido';
+        acc[m] = (acc[m] || 0) + Number(s.total || 0);
+        return acc;
+      }, {});
 
-  const closure = {
-    ...cr,
-    expectedAmount,
-    difference,
-    closedAt: new Date().toISOString(),
-    subtotalTurno,
-    ivaTurno,
-    totalTurno,
-    gananciaNetaTurno,
-    desgloseMetodo,
-    movements: [
-      ...movements,
-      {
-        id: cryptoRandom(),
-        type: 'closing',
-        concept: 'Cierre',
-        amount: Number(currentAmount || 0),
-        timestamp: new Date().toISOString(),
-      },
-    ],
-  };
+      const closure = {
+        ...cr,
+        expectedAmount,
+        difference,
+        closedAt: new Date().toISOString(),
+        subtotalTurno,
+        ivaTurno,
+        totalTurno,
+        gananciaNetaTurno,
+        desgloseMetodo,
+        movements: [
+          ...movements,
+          {
+            id: cryptoRandom(),
+            type: 'closing',
+            concept: 'Cierre',
+            amount: Number(currentAmount || 0),
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
 
-  return {
-    ...state,
-    cashClosures: [...state.cashClosures, closure],
-    cashRegister: {
-      isOpen: false,
-      openedAt: null,
-      openingAmount: 0,
-      currentAmount: 0,
-      movements: [],
-      salesByType: { cash: 0, transfer: 0, mixed: 0, credit: 0, card: 0, account: 0 },
-      cashFromMixed: 0,
-    },
-  };
-}
-
+      return {
+        ...state,
+        cashClosures: [...state.cashClosures, closure],
+        cashRegister: {
+          isOpen: false,
+          openedAt: null,
+          openingAmount: 0,
+          currentAmount: 0,
+          movements: [],
+          salesByType: { cash: 0, transfer: 0, mixed: 0, credit: 0, card: 0, account: 0 },
+          cashFromMixed: 0,
+        },
+      };
+    }
 
     /* ------ Ventas ------ */
     case 'SAVE_SALE': {
@@ -553,6 +648,36 @@ const calcDetail = (cart, discount, taxRate) => {
 const calcProfit = (cart) =>
   (cart || []).reduce((sum, it) => sum + (Number(it.price || 0) - Number(it.cost || 0)) * Number(it.quantity || 0), 0);
 
+// Función de validación de productos
+const validateProduct = (product, products, editingId = null) => {
+  const errors = [];
+
+  // Validar campos requeridos
+  if (!product.code?.trim()) errors.push("El código es requerido");
+  if (!product.name?.trim()) errors.push("El nombre es requerido");
+  
+  // Validar código único
+  const duplicateCode = products.find(p => 
+    p.code === product.code && p.id !== editingId
+  );
+  if (duplicateCode) {
+    errors.push(`El código "${product.code}" ya existe en el producto "${duplicateCode.name}"`);
+  }
+
+  // Validar precios
+  if (product.price < 0) errors.push("El precio no puede ser negativo");
+  if (product.cost < 0) errors.push("El costo no puede ser negativo");
+  if (product.price < product.cost) {
+    errors.push("El precio de venta no puede ser menor al costo");
+  }
+
+  // Validar stock
+  if (product.stock < 0) errors.push("El stock no puede ser negativo");
+  if (product.minStock < 0) errors.push("El stock mínimo no puede ser negativo");
+
+  return errors;
+};
+
 /* --------------------- Provider --------------------- */
 export function POSProvider({ children }) {
   const [state, dispatch] = useReducer(posReducer, initialState);
@@ -577,13 +702,18 @@ export function POSProvider({ children }) {
 
         mergedSettings.taxRate = Number(mergedSettings.taxRate ?? 0.21);
 
+        // Validar y limpiar productos al cargar
+        const validatedProducts = validateAndCleanProducts(
+          parsed.products?.length ? parsed.products : sampleProducts
+        );
+
         dispatch({
           type: 'LOAD_DATA',
           payload: {
             ...initialState,
             ...parsed,
             settings: mergedSettings,
-            products: parsed.products?.length ? parsed.products : sampleProducts,
+            products: validatedProducts, // Usar productos validados
             customers: parsed.customers?.length ? parsed.customers : sampleCustomers,
             providers: parsed.providers?.length ? parsed.providers : sampleProviders,
             providerRestock: parsed.providerRestock || {},
@@ -592,12 +722,19 @@ export function POSProvider({ children }) {
               : initialState.cashRegister,
           },
         });
+
+        // Mostrar advertencia si se encontraron productos inválidos
+        const originalCount = parsed.products?.length || 0;
+        const validatedCount = validatedProducts.length;
+        if (validatedCount < originalCount) {
+          console.warn(`Se cargaron ${validatedCount} de ${originalCount} productos. ${originalCount - validatedCount} productos fueron omitidos por errores.`);
+        }
       } else {
         dispatch({
           type: 'LOAD_DATA',
           payload: {
             ...initialState,
-            products: sampleProducts,
+            products: validateAndCleanProducts(sampleProducts),
             customers: sampleCustomers,
             providers: sampleProviders,
           },
@@ -609,7 +746,7 @@ export function POSProvider({ children }) {
         type: 'LOAD_DATA',
         payload: {
           ...initialState,
-          products: sampleProducts,
+          products: validateAndCleanProducts(sampleProducts),
           customers: sampleCustomers,
           providers: sampleProviders,
         },
@@ -626,47 +763,44 @@ export function POSProvider({ children }) {
     return () => window.removeEventListener('pos:set-customer', handler);
   }, []);
 
-useEffect(() => {
-  const toSave = { ...state, cart: undefined };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+  useEffect(() => {
+    const toSave = { ...state, cart: undefined };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
 
-  const channel = new BroadcastChannel('ferrePOS');
+    const channel = new BroadcastChannel('ferrePOS');
 
-  const hasActiveCart = Array.isArray(state.cart) && state.cart.length > 0;
-  const detail = calcDetail(state.cart, state.discount, state.settings.taxRate);
+    const hasActiveCart = Array.isArray(state.cart) && state.cart.length > 0;
+    const detail = calcDetail(state.cart, state.discount, state.settings.taxRate);
 
-  // 🚫 Evitar enviar actualizaciones incompletas (cuando el carrito está vacío pero hay pago activo)
-  const shouldSendEmpty =
-    !hasActiveCart &&
-    Number(state.paymentAmount || 0) === 0 &&
-    !state.currentCustomer &&
-    Number(detail.total || 0) === 0;
+    // 🚫 Evitar enviar actualizaciones incompletas (cuando el carrito está vacío pero hay pago activo)
+    const shouldSendEmpty =
+      !hasActiveCart &&
+      Number(state.paymentAmount || 0) === 0 &&
+      !state.currentCustomer &&
+      Number(detail.total || 0) === 0;
 
-  channel.postMessage({
-    type: 'STATE_UPDATE',
-    cart: shouldSendEmpty ? [] : state.cart ?? [],
-    currentCustomer: state.currentCustomer ?? null,
-    paymentMethod: state.paymentMethod ?? 'cash',
-    paymentAmount: Number(state.paymentAmount || 0),
-    discount: Number(state.discount || 0),
-    subtotal: Number(detail.subtotal || 0),
-    taxAmount: Number(detail.taxAmount || 0),
-    total: Number(detail.total || 0),
-    isEmpty: shouldSendEmpty,
-  });
+    channel.postMessage({
+      type: 'STATE_UPDATE',
+      cart: shouldSendEmpty ? [] : state.cart ?? [],
+      currentCustomer: state.currentCustomer ?? null,
+      paymentMethod: state.paymentMethod ?? 'cash',
+      paymentAmount: Number(state.paymentAmount || 0),
+      discount: Number(state.discount || 0),
+      subtotal: Number(detail.subtotal || 0),
+      taxAmount: Number(detail.taxAmount || 0),
+      total: Number(detail.total || 0),
+      isEmpty: shouldSendEmpty,
+    });
 
-  channel.close();
-}, [
-  state.cart,
-  state.currentCustomer,
-  state.paymentMethod,
-  state.paymentAmount,
-  state.discount,
-  state.settings.taxRate,
-]);
-
-
-
+    channel.close();
+  }, [
+    state.cart,
+    state.currentCustomer,
+    state.paymentMethod,
+    state.paymentAmount,
+    state.discount,
+    state.settings.taxRate,
+  ]);
 
   /* --------------------- API expuesta --------------------- */
   const addToCart = (product, quantity = 1, customPrice = null, note = '') => {
@@ -806,11 +940,11 @@ useEffect(() => {
     toast({ title: 'Cliente agregado', description: `${newCustomer.name} ha sido agregado.` });
     return newCustomer;
   };
+  
   const deleteCustomer = (id) => {
-  dispatch({ type: 'DELETE_CUSTOMER', payload: id });
-  toast({ title: 'Cliente eliminado', description: 'El cliente ha sido eliminado correctamente.' });
-};
-
+    dispatch({ type: 'DELETE_CUSTOMER', payload: id });
+    toast({ title: 'Cliente eliminado', description: 'El cliente ha sido eliminado correctamente.' });
+  };
 
   const addProvider = (providerData) => {
     if (!providerData?.name?.trim()) {
