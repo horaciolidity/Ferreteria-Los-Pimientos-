@@ -44,7 +44,7 @@ export default function ProductManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [validationErrors, setValidationErrors] = useState([]);
   
   const [newProduct, setNewProduct] = useState({
@@ -73,8 +73,7 @@ export default function ProductManagement() {
         product.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.category?.toLowerCase().includes(searchQuery.toLowerCase());
       
-      const matchesCategory = !categoryFilter || product.category === categoryFilter;
-      
+      const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;      
       return matchesSearch && matchesCategory;
     });
 
@@ -461,8 +460,7 @@ export default function ProductManagement() {
                 <SelectValue placeholder="Todas las categorías" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todas las categorías</SelectItem>
-                {categories.map(category => (
+                  <SelectItem value="all">Todas las categorías</SelectItem>                {categories.map(category => (
                   <SelectItem key={category} value={category}>
                     {category}
                   </SelectItem>

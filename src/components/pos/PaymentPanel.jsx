@@ -124,29 +124,34 @@ export default function PaymentPanel() {
         <div className="space-y-2">
           <Label>Cliente (opcional)</Label>
           <div className="flex space-x-2">
-            <Select
-              onValueChange={(val) => {
-                const customer = state.customers.find((c) => c.id === val);
-                setCustomerSafe(customer);
-              }}
-              value={state.currentCustomer?.id || ""}
-            >
-              <SelectTrigger className="flex-1 h-12 text-base">
-                <SelectValue placeholder="Seleccionar cliente" />
-              </SelectTrigger>
-              <SelectContent>
-                {state.customers.map((customer) => (
-                  <SelectItem key={customer.id} value={customer.id} className="text-base">
-                    {customer.name}
-                    {customer.balance < 0 && (
-                      <span className="text-red-500 ml-2">
-                        (Debe: ${Math.abs(customer.balance).toFixed(2)})
-                      </span>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+         <Select
+  onValueChange={(val) => {
+    if (val === "none") {
+      setCustomerSafe(null);
+    } else {
+      const customer = state.customers.find((c) => c.id === val);
+      setCustomerSafe(customer);
+    }
+  }}
+  value={state.currentCustomer?.id || "none"}  // ← Usa "none" en lugar de ""
+>
+  <SelectTrigger className="flex-1 h-12 text-base">
+    <SelectValue placeholder="Seleccionar cliente" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="none">Sin cliente</SelectItem>  {/* ← Agrega esta opción */}
+    {state.customers.map((customer) => (
+      <SelectItem key={customer.id} value={customer.id} className="text-base">
+        {customer.name}
+        {customer.balance < 0 && (
+          <span className="text-red-500 ml-2">
+            (Debe: ${Math.abs(customer.balance).toFixed(2)})
+          </span>
+        )}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
 
             <Dialog open={isCustomerDialogOpen} onOpenChange={setIsCustomerDialogOpen}>
               <DialogTrigger asChild>
