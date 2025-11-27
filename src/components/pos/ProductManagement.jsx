@@ -153,77 +153,217 @@ export default function ProductManagement() {
     }
   };
 
-  // FUNCIÓN DE IMPORTACIÓN - AQUÍ ESTÁ LA QUE ME PASASTE ADAPTADA A REACT
-  const importProducts = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    
-    input.onchange = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+  // FUNCIÓN DE IMPORTACIÓN MEJORADA - SOPORTA MÚLTIPLES FORMATOS Y REEMPLAZO COMPLETO
+const importProducts = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,.csv,.txt';
+  
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-      // Confirmar antes de importar
-      if (!window.confirm(`¿Importar productos desde ${file.name}? Los productos existentes con el mismo código serán actualizados.`)) {
-        return;
-      }
+    const fileExtension = file.name.split('.').pop().toLowerCase();
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const importedProducts = JSON.parse(event.target.result);
-          
-          if (!Array.isArray(importedProducts)) {
-            throw new Error('El archivo debe contener un array de productos');
-          }
+    // Confirmación más clara sobre el reemplazo
+    if (!window.confirm(
+      `¿IMPORTAR PRODUCTOS DESDE ${file.name}?\n\n` +
+      `⚠️  ESTA ACCIÓN REEMPLAZARÁ TODOS LOS PRODUCTOS ACTUALES.\n` +
+      `• Productos actuales: ${state.products.length}\n` +
+      `• Se perderán todos los productos existentes.`
+    )) {
+      return;
+    }
 
-          let added = 0;
-          let updated = 0;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        let importedProducts = [];
+        const fileContent = event.target.result;
 
-          importedProducts.forEach(importedProduct => {
-            const existingProduct = state.products.find(p => p.code === importedProduct.code);
-            
-            if (existingProduct) {
-              // Actualizar producto existente
-              dispatch({
-                type: 'UPDATE_PRODUCT',
-                payload: {
-                  id: existingProduct.id,
-                  updates: {
-                    ...importedProduct,
-                    // Mantener el ID original
-                    id: existingProduct.id
-                  }
+        switch (fileExtension) {
+          case 'json':
+            importedProducts = JSON.parse(fileContent);
+            break;
+
+          case 'csv':
+            importedProducts = parseCSV(fileContent);
+            break;
+
+          case 'txt':
+            importedProducts = parseTXT(fileContent);
+            break;
+
+          default:
+            throw new Error('Formato de archivo no soportado');
+        }
+
+        if (!Array.isArray(importedProducts)) {
+          throw new Error('El archivo debe contener un array de productos');
+        }
+
+        // VALIDAR PRODUCTOS IMPORTADOS
+        const validationErrors = validateImportedProducts(importedProducts);
+        if (validationErrors.length > 0) {
+          toast({
+            title: "Errores en los datos importados",
+            description: (
+              <div>
+                {validationErrors.slice(0, 3).map((error, index) => (
+                  <div key={index}>• {error}</div>
+                ))}
+                {validationErrors.length > 3 && 
+                  <div>... y {validationErrors.length - 3} errores más</div>
                 }
-              });
-              updated++;
-            } else {
-              // Agregar nuevo producto
-              dispatch({ type: 'ADD_PRODUCT', payload: importedProduct });
-              added++;
-            }
-          });
-
-          toast({
-            title: "Importación completada",
-            description: `${added} nuevos productos, ${updated} actualizados`
-          });
-
-        } catch (error) {
-          console.error('Error importing products:', error);
-          toast({
-            title: "Error al importar",
-            description: "Archivo JSON inválido",
+              </div>
+            ),
             variant: "destructive"
           });
+          return;
         }
-      };
 
-      reader.readAsText(file);
+        // REEMPLAZAR TODOS LOS PRODUCTOS EXISTENTES
+        dispatch({ 
+          type: 'REPLACE_ALL_PRODUCTS', 
+          payload: importedProducts 
+        });
+
+        toast({
+          title: "Importación completada",
+          description: `${importedProducts.length} productos importados exitosamente`
+        });
+
+      } catch (error) {
+        console.error('Error importing products:', error);
+        toast({
+          title: "Error al importar",
+          description: error.message || "Formato de archivo inválido",
+          variant: "destructive"
+        });
+      }
     };
 
-    input.click();
+    reader.readAsText(file);
   };
+
+  input.click();
+};
+
+// FUNCIÓN PARA PARSEAR CSV
+const parseCSV = (csvContent) => {
+  const lines = csvContent.split('\n').filter(line => line.trim() !== '');
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split(',').map(header => header.trim().replace(/"/g, ''));
+  
+  return lines.slice(1).map(line => {
+    const values = line.split(',').map(value => value.trim().replace(/"/g, ''));
+    const product = {};
+    
+    headers.forEach((header, index) => {
+      let value = values[index] || '';
+      
+      // Convertir valores numéricos
+      if (['price', 'cost', 'stock', 'minStock'].includes(header)) {
+        value = parseFloat(value) || 0;
+      }
+      
+      product[header] = value;
+    });
+
+    return product;
+  });
+};
+
+// FUNCIÓN PARA PARSEAR TXT
+const parseTXT = (txtContent) => {
+  const products = [];
+  const sections = txtContent.split('----------------------------------------');
+  
+  sections.forEach(section => {
+    if (!section.trim()) return;
+    
+    const lines = section.split('\n').filter(line => line.trim());
+    const product = {};
+    
+    lines.forEach(line => {
+      const [key, ...valueParts] = line.split(':');
+      if (!key || !valueParts.length) return;
+      
+      const value = valueParts.join(':').trim();
+      const cleanKey = key.trim().toLowerCase();
+      
+      switch (cleanKey) {
+        case 'código':
+          product.code = value;
+          break;
+        case 'nombre':
+          product.name = value;
+          break;
+        case 'precio':
+          product.price = parseFloat(value.replace('$', '')) || 0;
+          break;
+        case 'costo':
+          product.cost = parseFloat(value.replace('$', '')) || 0;
+          break;
+        case 'stock':
+          const stockMatch = value.match(/(\d+)\s*(\w+)/);
+          if (stockMatch) {
+            product.stock = parseInt(stockMatch[1]) || 0;
+            product.unit = stockMatch[2] || 'unidad';
+          }
+          break;
+        case 'categoría':
+          product.category = value !== 'N/A' ? value : '';
+          break;
+        case 'stock mínimo':
+          product.minStock = parseInt(value) || 0;
+          break;
+      }
+    });
+    
+    if (product.code && product.name) {
+      products.push(product);
+    }
+  });
+  
+  return products;
+};
+
+// VALIDAR PRODUCTOS IMPORTADOS
+const validateImportedProducts = (products) => {
+  const errors = [];
+  const seenCodes = new Set();
+
+  products.forEach((product, index) => {
+    // Validar código único en el archivo
+    if (seenCodes.has(product.code)) {
+      errors.push(`Código duplicado: "${product.code}" en producto ${index + 1}`);
+    }
+    seenCodes.add(product.code);
+
+    // Validar campos requeridos
+    if (!product.code?.trim()) {
+      errors.push(`Producto ${index + 1}: código requerido`);
+    }
+    if (!product.name?.trim()) {
+      errors.push(`Producto ${index + 1}: nombre requerido`);
+    }
+
+    // Validar números
+    if (product.price < 0) {
+      errors.push(`Producto ${index + 1}: precio no puede ser negativo`);
+    }
+    if (product.cost < 0) {
+      errors.push(`Producto ${index + 1}: costo no puede ser negativo`);
+    }
+    if (product.stock < 0) {
+      errors.push(`Producto ${index + 1}: stock no puede ser negativo`);
+    }
+  });
+
+  return errors;
+};
 
   // CORRECCIÓN CRÍTICA: Select de Proveedor corregido
   const ProviderSelect = () => (
@@ -355,7 +495,7 @@ export default function ProductManagement() {
         <div className="flex space-x-2">
           {/* BOTÓN DE IMPORTACIÓN AGREGADO AQUÍ */}
           <Button onClick={importProducts} variant="outline">
-            <Upload className="h-4 w-4 mr-2" />Importar JSON
+            <Upload className="h-4 w-4 mr-2" />Importar Productos
           </Button>
           <Button onClick={() => exportProducts('txt')} variant="outline">
             <Download className="h-4 w-4 mr-2" />Exportar TXT
