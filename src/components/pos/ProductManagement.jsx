@@ -153,7 +153,7 @@ export default function ProductManagement() {
     }
   };
 
-  // FUNCIÓN DE IMPORTACIÓN MEJORADA - SOPORTA MÚLTIPLES FORMATOS Y REEMPLAZO COMPLETO
+ // FUNCIÓN DE IMPORTACIÓN CORREGIDA - ACTUALIZA SOLO PRODUCTOS MODIFICADOS
 const importProducts = () => {
   const input = document.createElement('input');
   input.type = 'file';
@@ -165,12 +165,12 @@ const importProducts = () => {
 
     const fileExtension = file.name.split('.').pop().toLowerCase();
 
-    // Confirmación más clara sobre el reemplazo
+    // Mensaje más claro sobre lo que hará
     if (!window.confirm(
-      `¿IMPORTAR PRODUCTOS DESDE ${file.name}?\n\n` +
-      `⚠️  ESTA ACCIÓN REEMPLAZARÁ TODOS LOS PRODUCTOS ACTUALES.\n` +
-      `• Productos actuales: ${state.products.length}\n` +
-      `• Se perderán todos los productos existentes.`
+      `¿Importar productos desde ${file.name}?\n\n` +
+      `• Se actualizarán los productos existentes que coincidan por código\n` +
+      `• Se agregarán productos nuevos\n` +
+      `• Los productos que no estén en el archivo se mantendrán`
     )) {
       return;
     }
@@ -202,7 +202,7 @@ const importProducts = () => {
           throw new Error('El archivo debe contener un array de productos');
         }
 
-        // VALIDAR PRODUCTOS IMPORTADOS
+        // Validar productos importados
         const validationErrors = validateImportedProducts(importedProducts);
         if (validationErrors.length > 0) {
           toast({
@@ -222,15 +222,58 @@ const importProducts = () => {
           return;
         }
 
-        // REEMPLAZAR TODOS LOS PRODUCTOS EXISTENTES
-        dispatch({ 
-          type: 'REPLACE_ALL_PRODUCTS', 
-          payload: importedProducts 
+        let added = 0;
+        let updated = 0;
+        let unchanged = 0;
+
+        // LÓGICA CORREGIDA: Actualizar solo productos modificados
+        importedProducts.forEach(importedProduct => {
+          const existingProduct = state.products.find(p => p.code === importedProduct.code);
+          
+          if (existingProduct) {
+            // Verificar si realmente hay cambios antes de actualizar
+            const hasChanges = 
+              existingProduct.name !== importedProduct.name ||
+              existingProduct.price !== importedProduct.price ||
+              existingProduct.cost !== importedProduct.cost ||
+              existingProduct.stock !== importedProduct.stock ||
+              existingProduct.unit !== importedProduct.unit ||
+              existingProduct.category !== importedProduct.category ||
+              existingProduct.minStock !== importedProduct.minStock;
+            
+            if (hasChanges) {
+              dispatch({
+                type: 'UPDATE_PRODUCT',
+                payload: {
+                  id: existingProduct.id,
+                  updates: {
+                    ...importedProduct,
+                    // Mantener el ID original y providerId
+                    id: existingProduct.id,
+                    providerId: importedProduct.providerId || existingProduct.providerId
+                  }
+                }
+              });
+              updated++;
+            } else {
+              unchanged++;
+            }
+          } else {
+            // Agregar nuevo producto
+            dispatch({ 
+              type: 'ADD_PRODUCT', 
+              payload: {
+                ...importedProduct,
+                id: Date.now().toString() // Generar nuevo ID
+              }
+            });
+            added++;
+          }
         });
 
         toast({
           title: "Importación completada",
-          description: `${importedProducts.length} productos importados exitosamente`
+          description: `${added} nuevos, ${updated} actualizados, ${unchanged} sin cambios`
         });
 
       } catch (error) {
@@ -275,7 +318,7 @@ const parseCSV = (csvContent) => {
   });
 };
 
-// FUNCIÓN PARA PARSEAR TXT
+// PARSER DE TXT MEJORADO
 const parseTXT = (txtContent) => {
   const products = [];
   const sections = txtContent.split('----------------------------------------');
@@ -284,14 +327,26 @@ const parseTXT = (txtContent) => {
     if (!section.trim()) return;
     
     const lines = section.split('\n').filter(line => line.trim());
-    const product = {};
+    const product = {
+      code: '',
+      name: '',
+      price: 0,
+      cost: 0,
+      stock: 0,
+      unit: 'unidad',
+      category: '',
+      minStock: 0,
+      providerId: ''
+    };
     
     lines.forEach(line => {
-      const [key, ...valueParts] = line.split(':');
-      if (!key || !valueParts.length) return;
+      const separatorIndex = line.indexOf(':');
+      if (separatorIndex === -1) return;
       
-      const value = valueParts.join(':').trim();
-      const cleanKey = key.trim().toLowerCase();
+      const key = line.substring(0, separatorIndex).trim();
+      const value = line.substring(separatorIndex + 1).trim();
+      
+      const cleanKey = key.toLowerCase();
       
       switch (cleanKey) {
         case 'código':
@@ -300,17 +355,28 @@ const parseTXT = (txtContent) => {
         case 'nombre':
           product.name = value;
           break;
+        case 'proveedor':
+          // Buscar proveedor por nombre para obtener ID
+          const provider = state.providers.find(p => 
+            p.name.toLowerCase() === value.toLowerCase()
+          );
+          if (provider) {
+            product.providerId = provider.id;
+          }
+          break;
         case 'precio':
-          product.price = parseFloat(value.replace('$', '')) || 0;
+          product.price = parseFloat(value.replace('$', '').replace(',', '')) || 0;
           break;
         case 'costo':
-          product.cost = parseFloat(value.replace('$', '')) || 0;
+          product.cost = parseFloat(value.replace('$', '').replace(',', '')) || 0;
           break;
         case 'stock':
-          const stockMatch = value.match(/(\d+)\s*(\w+)/);
+          const stockMatch = value.match(/([\d.]+)\s*(\w+)/);
           if (stockMatch) {
-            product.stock = parseInt(stockMatch[1]) || 0;
+            product.stock = parseFloat(stockMatch[1]) || 0;
             product.unit = stockMatch[2] || 'unidad';
+          } else {
+            product.stock = parseFloat(value) || 0;
           }
           break;
         case 'categoría':
@@ -322,6 +388,7 @@ const parseTXT = (txtContent) => {
       }
     });
     
+    // Solo agregar si tiene código y nombre
     if (product.code && product.name) {
       products.push(product);
     }
@@ -330,7 +397,7 @@ const parseTXT = (txtContent) => {
   return products;
 };
 
-// VALIDAR PRODUCTOS IMPORTADOS
+// VALIDAR PRODUCTOS IMPORTADOS - MEJORADA
 const validateImportedProducts = (products) => {
   const errors = [];
   const seenCodes = new Set();
@@ -338,27 +405,30 @@ const validateImportedProducts = (products) => {
   products.forEach((product, index) => {
     // Validar código único en el archivo
     if (seenCodes.has(product.code)) {
-      errors.push(`Código duplicado: "${product.code}" en producto ${index + 1}`);
+      errors.push(`Código duplicado en archivo: "${product.code}" en línea ${index + 1}`);
     }
     seenCodes.add(product.code);
 
     // Validar campos requeridos
     if (!product.code?.trim()) {
-      errors.push(`Producto ${index + 1}: código requerido`);
+      errors.push(`Línea ${index + 1}: código requerido`);
     }
     if (!product.name?.trim()) {
-      errors.push(`Producto ${index + 1}: nombre requerido`);
+      errors.push(`Línea ${index + 1}: nombre requerido`);
     }
 
     // Validar números
-    if (product.price < 0) {
-      errors.push(`Producto ${index + 1}: precio no puede ser negativo`);
+    if (isNaN(product.price) || product.price < 0) {
+      errors.push(`Línea ${index + 1}: precio inválido`);
     }
-    if (product.cost < 0) {
-      errors.push(`Producto ${index + 1}: costo no puede ser negativo`);
+    if (isNaN(product.cost) || product.cost < 0) {
+      errors.push(`Línea ${index + 1}: costo inválido`);
     }
-    if (product.stock < 0) {
-      errors.push(`Producto ${index + 1}: stock no puede ser negativo`);
+    if (isNaN(product.stock) || product.stock < 0) {
+      errors.push(`Línea ${index + 1}: stock inválido`);
+    }
+    if (isNaN(product.minStock) || product.minStock < 0) {
+      errors.push(`Línea ${index + 1}: stock mínimo inválido`);
     }
   });
 

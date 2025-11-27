@@ -240,14 +240,7 @@ function posReducer(state, action) {
     
     case 'DELETE_PRODUCT':
       return { ...state, products: state.products.filter(p => p.id !== action.payload) };
-case 'REPLACE_ALL_PRODUCTS': {
-  const newProducts = action.payload;
-  const validatedProducts = validateAndCleanProducts(newProducts);
-  return {
-    ...state,
-    products: validatedProducts
-  };
-}
+
     case 'ADD_CUSTOMER':
       return { ...state, customers: [...state.customers, { ...action.payload, id: Date.now().toString(), balance: 0 }] };
     case 'UPDATE_CUSTOMER':
