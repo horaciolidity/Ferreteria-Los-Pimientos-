@@ -1,4 +1,3 @@
-// src/components/ui/badge.jsx
 import React from 'react';
 import { cn } from '@/lib/utils';
 
@@ -19,4 +18,4 @@ const Badge = ({ className, variant = 'default', ...props }) => {
   );
 };
 
-export default Badge;
+export { Badge };
