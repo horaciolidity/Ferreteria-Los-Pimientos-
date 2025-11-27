@@ -153,6 +153,78 @@ export default function ProductManagement() {
     }
   };
 
+  // FUNCIÓN DE IMPORTACIÓN - AQUÍ ESTÁ LA QUE ME PASASTE ADAPTADA A REACT
+  const importProducts = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      // Confirmar antes de importar
+      if (!window.confirm(`¿Importar productos desde ${file.name}? Los productos existentes con el mismo código serán actualizados.`)) {
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const importedProducts = JSON.parse(event.target.result);
+          
+          if (!Array.isArray(importedProducts)) {
+            throw new Error('El archivo debe contener un array de productos');
+          }
+
+          let added = 0;
+          let updated = 0;
+
+          importedProducts.forEach(importedProduct => {
+            const existingProduct = state.products.find(p => p.code === importedProduct.code);
+            
+            if (existingProduct) {
+              // Actualizar producto existente
+              dispatch({
+                type: 'UPDATE_PRODUCT',
+                payload: {
+                  id: existingProduct.id,
+                  updates: {
+                    ...importedProduct,
+                    // Mantener el ID original
+                    id: existingProduct.id
+                  }
+                }
+              });
+              updated++;
+            } else {
+              // Agregar nuevo producto
+              dispatch({ type: 'ADD_PRODUCT', payload: importedProduct });
+              added++;
+            }
+          });
+
+          toast({
+            title: "Importación completada",
+            description: `${added} nuevos productos, ${updated} actualizados`
+          });
+
+        } catch (error) {
+          console.error('Error importing products:', error);
+          toast({
+            title: "Error al importar",
+            description: "Archivo JSON inválido",
+            variant: "destructive"
+          });
+        }
+      };
+
+      reader.readAsText(file);
+    };
+
+    input.click();
+  };
+
   // CORRECCIÓN CRÍTICA: Select de Proveedor corregido
   const ProviderSelect = () => (
     <Select 
@@ -180,7 +252,6 @@ export default function ProductManagement() {
     </Select>
   );
 
-  // Exportación mejorada
   const exportProducts = (format = 'json') => {
     try {
       let dataStr, mimeType, extension;
@@ -206,6 +277,33 @@ export default function ProductManagement() {
         dataStr = csvContent;
         mimeType = 'text/csv;charset=utf-8;';
         extension = 'csv';
+      } else if (format === 'txt') {
+        // Formato TXT - más legible para humanos
+        const txtContent = state.products.map(p => {
+          const provider = state.providers.find(prov => prov.id === p.providerId)?.name || 'N/A';
+          return [
+            `Código: ${p.code}`,
+            `Nombre: ${p.name}`,
+            `Proveedor: ${provider}`,
+            `Precio: $${p.price.toFixed(2)}`,
+            `Costo: $${p.cost.toFixed(2)}`,
+            `Stock: ${p.stock} ${p.unit}`,
+            `Categoría: ${p.category || 'N/A'}`,
+            `Stock Mínimo: ${p.minStock}`,
+            `Margen: ${p.price > 0 ? (((p.price - p.cost) / p.price * 100).toFixed(1)) : 0}%`,
+            '----------------------------------------'
+          ].join('\n');
+        }).join('\n\n');
+
+        // Cabecera del archivo
+        dataStr = `INVENTARIO - ${state.settings.companyName}\n` +
+                  `Fecha: ${new Date().toLocaleDateString()}\n` +
+                  `Total productos: ${state.products.length}\n` +
+                  '========================================\n\n' +
+                  txtContent;
+        
+        mimeType = 'text/plain;charset=utf-8;';
+        extension = 'txt';
       } else {
         dataStr = JSON.stringify(state.products, null, 2);
         mimeType = 'application/json';
@@ -255,6 +353,13 @@ export default function ProductManagement() {
           </span>
         </h1>
         <div className="flex space-x-2">
+          {/* BOTÓN DE IMPORTACIÓN AGREGADO AQUÍ */}
+          <Button onClick={importProducts} variant="outline">
+            <Upload className="h-4 w-4 mr-2" />Importar JSON
+          </Button>
+          <Button onClick={() => exportProducts('txt')} variant="outline">
+            <Download className="h-4 w-4 mr-2" />Exportar TXT
+          </Button>
           <Button onClick={() => exportProducts('csv')} variant="outline">
             <Download className="h-4 w-4 mr-2" />Exportar CSV
           </Button>
